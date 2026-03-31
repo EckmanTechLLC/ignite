@@ -607,6 +607,21 @@ Ignite clones and polls your git repositories over HTTPS.
 
 ---
 
+## Demo
+
+A working demo app (React + Vite + Tailwind) is available at [EckmanTechLLC/ignite-demo](https://github.com/EckmanTechLLC/ignite-demo). It demonstrates:
+
+- Live tag values via SSE
+- Tag browsing and history charts
+- Alarm monitoring and acknowledgment
+- Database queries
+- Script execution console
+- SCADA-style Refrigeration P&ID with animated flow
+- Login/logout with role-based UI
+- Audit log viewer
+
+---
+
 ## License
 
 MIT
