@@ -9,6 +9,7 @@ import com.ignite.gateway.web.AuditRoutes;
 import com.ignite.gateway.web.AuthRoutes;
 import com.ignite.gateway.web.AuthUtil;
 import com.ignite.gateway.web.DbRoutes;
+import com.ignite.gateway.web.LaunchRoutes;
 import com.ignite.gateway.web.ScriptRoutes;
 import com.ignite.gateway.web.SettingsRoutes;
 import com.ignite.gateway.web.SessionStore;
@@ -21,6 +22,7 @@ import com.ignite.gateway.web.TagRoutes;
 import com.inductiveautomation.ignition.common.BundleUtil;
 import com.inductiveautomation.ignition.common.licensing.LicenseState;
 import com.inductiveautomation.ignition.common.util.LoggerEx;
+import com.inductiveautomation.ignition.gateway.dataroutes.PermissionType;
 import com.inductiveautomation.ignition.gateway.dataroutes.RouteGroup;
 import com.inductiveautomation.ignition.gateway.model.AbstractGatewayModuleHook;
 import com.inductiveautomation.ignition.gateway.model.GatewayContext;
@@ -95,8 +97,20 @@ public class IgniteGatewayHook extends AbstractGatewayModuleHook {
             log.warn("Could not register SystemJS module (non-fatal).", e);
         }
 
+        try {
+            context.getWebResourceManager()
+                   .getSystemJsModuleRegistry()
+                   .add("ignite-launch", "/res/ignite/ignite-launch.js");
+            log.info("Registered SystemJS module: ignite-launch -> /res/ignite/ignite-launch.js");
+        } catch (Exception e) {
+            log.warn("Could not register SystemJS module ignite-launch (non-fatal).", e);
+        }
+
         // Register nav entry: Connections > Ignite > Sites
         registerNavEntry(context);
+
+        // Register nav entry: Home > Ignite > Launch
+        registerHomeNavEntry(context);
     }
 
     @Override
@@ -129,6 +143,7 @@ public class IgniteGatewayHook extends AbstractGatewayModuleHook {
         AuthRoutes.mountRoutes(routes, context, sessionStore);
         SiteConfigRoutes.mountRoutes(routes, context, syncService);
         SettingsRoutes.mountRoutes(routes, context);
+        LaunchRoutes.mountRoutes(routes, context, syncService);
         TagRoutes.mountRoutes(routes, context);
         DbRoutes.mountRoutes(routes, context);
         AlarmRoutes.mountRoutes(routes, context);
@@ -175,7 +190,7 @@ public class IgniteGatewayHook extends AbstractGatewayModuleHook {
                     .addCategory("ignite", cb ->
                             cb.label(BundleUtil.get().getString("Ignite.nav.header"))
                               .position(700)
-                              .addPage("sites", pb ->
+                              .addPage("Sites", pb ->
                                       pb.title(BundleUtil.get().getString("Ignite.nav.sites.title"))
                                         .mount("ignite/sites", new ReactComponentInfo(
                                                 "ignite-sites",
@@ -187,6 +202,35 @@ public class IgniteGatewayHook extends AbstractGatewayModuleHook {
             log.info("Registered nav entry: Connections > Ignite > Sites.");
         } catch (Exception e) {
             log.warn("Could not register nav entry (non-fatal).", e);
+        }
+    }
+
+    /**
+     * Adds "Ignite > Launch" under the Home section of the Gateway config UI.
+     * Labels follow task-60: the page key is the sidebar text; bundle keys omit the "Ignite." prefix.
+     */
+    private void registerHomeNavEntry(GatewayContext context) {
+        try {
+            context.getWebResourceManager()
+                    .getNavigationModel()
+                    .getHome()
+                    .addCategory("ignite", cb ->
+                            cb.label(BundleUtil.get().getString("Ignite.nav.home.header"))
+                              .requiredPermission(PermissionType.ACCESS)
+                              .position(600)
+                              .addPage("Launch", pb ->
+                                      pb.title(BundleUtil.get().getString("Ignite.nav.home.launch.title"))
+                                        .requiredPermission(PermissionType.ACCESS)
+                                        .mount("ignite/launch", new ReactComponentInfo(
+                                                "ignite-launch",
+                                                new SystemJsModule("ignite-launch", "/res/ignite/ignite-launch.js")))
+                                        .build()
+                              )
+                              .build()
+                    );
+            log.info("Registered nav entry: Home > Ignite > Launch.");
+        } catch (Exception e) {
+            log.warn("Could not register Home nav entry (non-fatal).", e);
         }
     }
 }
