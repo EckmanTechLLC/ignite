@@ -123,6 +123,7 @@ public class IgniteGatewayHook extends AbstractGatewayModuleHook {
     @Override
     public void shutdown() {
         log.info("Ignite module shutting down on Gateway.");
+        SubscriptionRoutes.shutdownAll();
         if (syncService != null) {
             syncService.stop();
         }
