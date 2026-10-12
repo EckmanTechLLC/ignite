@@ -1,0 +1,16 @@
+build/
+.gradle/
+**/build/
+**/node_modules/
+demo/dist/
+.odin/
+.claude/
+docs/sessions/
+.idea/
+*.iml
+.vscode/
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example
