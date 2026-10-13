@@ -45,6 +45,10 @@ import java.util.UUID;
  *
  * Auth: X-Ignite-Key header or apiKey query param matched against any site's
  * configured API key. An active Ignition session (non-empty actor) is also accepted.
+ *
+ * Tag scope (ADR-004 A1): status/history rows are filtered by source tag path; acknowledging an
+ * alarm whose source is outside the site's TagPathPatterns gives 403 {"error":"tag path not permitted"}
+ * before any ack. Sources look like "prov:default:/tag:Folder/Tag" and map to "[default]Folder/Tag".
  */
 public final class AlarmRoutes {
 
@@ -137,8 +141,12 @@ public final class AlarmRoutes {
 
             AlarmQueryResult results = context.getAlarmManager().queryStatus(filter);
 
+            TagScope scope = TagScope.forSite(site);
             JsonArray alarms = new JsonArray();
             for (AlarmEvent event : results) {
+                if (!inScope(scope, event)) {
+                    continue;
+                }
                 alarms.add(serializeEvent(event));
             }
 
@@ -162,7 +170,7 @@ public final class AlarmRoutes {
      *   end     — ISO-8601 end time (default: now)
      *   path    — optional source path prefix filter
      *   state   — optional state filter: ClearUnacked, ClearAcked, ActiveUnacked, ActiveAcked
-     *   journal — alarm journal profile name (default: empty string → gateway default)
+     *   journal — alarm journal profile name (required; 400 if missing or blank)
      */
     private static Object queryAlarmHistory(RequestContext req, HttpServletResponse res,
                                             GatewayContext context) {
@@ -174,6 +182,11 @@ public final class AlarmRoutes {
         if (site == null) {
             res.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return AuthUtil.errorJson("site required: send X-Ignite-Site or an API key");
+        }
+
+        String journal = req.getParameter("journal");
+        if (journal == null || journal.isBlank()) {
+            throw new AuthUtil.BadRequestException("journal parameter required");
         }
 
         try {
@@ -208,16 +221,14 @@ public final class AlarmRoutes {
                 filter.and(AlarmFilter.STATE, new EnumCondition<>(state));
             }
 
-            // Journal — default to empty string (gateway uses its default journal)
-            String journal = req.getParameter("journal");
-            if (journal == null) {
-                journal = "";
-            }
-
             AlarmQueryResult results = context.getAlarmManager().queryJournal(journal, filter);
 
+            TagScope scope = TagScope.forSite(site);
             JsonArray alarms = new JsonArray();
             for (AlarmEvent event : results) {
+                if (!inScope(scope, event)) {
+                    continue;
+                }
                 alarms.add(serializeEvent(event));
             }
 
@@ -299,6 +310,21 @@ public final class AlarmRoutes {
         }
 
         try {
+            TagScope scope = TagScope.forSite(site);
+            if (!scope.isUnrestricted()) {
+                // resolve each id to its event source via current status; unknown ids cannot be verified
+                java.util.Map<UUID, String> sources = new java.util.HashMap<>();
+                for (AlarmEvent event : context.getAlarmManager().queryStatus(new AlarmFilter())) {
+                    if (event.getId() != null) {
+                        sources.put(event.getId(), event.getSource() != null ? event.getSource().toString() : null);
+                    }
+                }
+                for (UUID id : uuids) {
+                    if (!sources.containsKey(id) || !scope.allowsAlarmSource(sources.get(id))) {
+                        return TagScope.deny(res, log, site, sources.get(id) != null ? sources.get(id) : id);
+                    }
+                }
+            }
             EventData ackData = new EventData(System.currentTimeMillis());
             Set<UUID> acknowledged = context.getAlarmManager().acknowledgeBulk(uuids, ackData);
 
@@ -330,6 +356,11 @@ public final class AlarmRoutes {
             throw new AuthUtil.BadRequestException("invalid path: " + path);
         }
         return parsed;
+    }
+
+    /** True if the event's source (QualifiedPath form) maps into the site's tag scope. */
+    private static boolean inScope(TagScope scope, AlarmEvent event) {
+        return scope.allowsAlarmSource(event.getSource() != null ? event.getSource().toString() : null);
     }
 
     private static Instant parseInstant(String value, String field) {

@@ -462,6 +462,7 @@ public final class SiteConfigRoutes {
         obj.addProperty("writeSecurityLevel", site.getWriteSecurityLevel());
         obj.addProperty("adminSecurityLevel", site.getAdminSecurityLevel());
         obj.addProperty("auditProfileName", site.getAuditProfileName());
+        obj.addProperty("tagPathPatterns", site.getTagPathPatterns());
         if (syncService != null && site.getId() != null) {
             obj.add("sync", syncService.getStatus(site.getId()).toJson());
         }
@@ -509,6 +510,15 @@ public final class SiteConfigRoutes {
         if (data.has("writeSecurityLevel")) { site.setWriteSecurityLevel(data.get("writeSecurityLevel").getAsString()); changed.add("writeSecurityLevel"); }
         if (data.has("adminSecurityLevel")) { site.setAdminSecurityLevel(data.get("adminSecurityLevel").getAsString()); changed.add("adminSecurityLevel"); }
         if (data.has("auditProfileName")) { site.setAuditProfileName(data.get("auditProfileName").getAsString()); changed.add("auditProfileName"); }
+        if (data.has("tagPathPatterns")) {
+            String patterns = data.get("tagPathPatterns").getAsString();
+            String bad = TagScope.firstInvalid(patterns);
+            if (bad != null) {
+                throw new AuthUtil.BadRequestException("invalid tag path pattern: " + bad);
+            }
+            site.setTagPathPatterns(patterns);
+            changed.add("tagPathPatterns");
+        }
         return changed;
     }
 

@@ -120,6 +120,7 @@ Robustness issues from the same review that are not design decisions: git subpro
 | task-44-web-session-bootstrap | `AuthUtil.isGatewayConfigWriter` (`SESSION_WRITE`) short-circuits `canAdminGateway`; web-session roles/security levels unioned into `getUserSecurityLevels` | task-33 |
 | task-45-config-ui-csrf | `isGatewayConfigWriter`: permission-only check for GET/HEAD/OPTIONS, permission + CSRF (`X-CSRF-Token`) for unsafe methods; panel fetches token from `/data/app/session` | task-44 |
 | task-46-anonymous-actor | `AuthUtil.webSessionUser` (`WebUiSession` -> `WebAuthUser`) is the only web identity source; all `req.getActor()` uses removed; `getActorIdentity` order Bearer, web session, api-key, `anonymous` | task-45 |
+| task-65-site-tag-scope (A1) | `SiteRecord.TagPathPatterns` + `TagScope` matcher (unit-tested) enforced on tags read/write/browse/history, `/sse`, alarms status/history/acknowledge; config UI "Tag scope" textarea + "scoped" badge; lab sites scoped `[default]Launch/**` / `[default]DC/**` | task-33, task-34 |
 
 Each task writes its summary to `docs/sessions/`.
 
@@ -144,3 +145,26 @@ Each task writes its summary to `docs/sessions/`.
 - Whether 8.3 exposes the authenticating user-source profile for a web session actor needs verification in task-37; the fallback (single `LoginAuthProfile`) is specified.
 - `BasicAuthChallenge` lives in `ignition-common` (not cached locally at review time); signature to be confirmed in task-37.
 - Named-query read-only detection depends on `NamedQueryManager` exposing the query's type; if not, treat all named queries as write tier.
+
+## Amendment A1 — per-site tag scope (2026-10-13, Accepted)
+
+**Finding (task-58 smoke matrix):** a site's API key — and a user resolved to a site via `X-Ignite-Site` — can read, browse, historise and subscribe to **any** tag on the gateway (the `launch` key reads `[default]DC/*`). ADR-004 bound keys to an access *tier* and a *site record*, never to a tag namespace. On a single-tenant lab this is harmless; for any gateway hosting several sites it is a data-exposure gap.
+
+**Decision:** add `SiteRecord.TagPathPatterns` (String, optional; one pattern per line or comma-separated) and enforce it on every tag-addressed route for the resolved site:
+
+| Pattern | Meaning |
+|---|---|
+| `[default]Launch/**` | the folder and everything below it (recursive) |
+| `[default]Launch/Clock/*` | direct children only |
+| `[default]Launch/Clock/Phase` | one tag |
+| blank field | **unrestricted** (today's behaviour; keeps every existing site working) |
+
+Rules:
+- Resolution first (ADR-004 §3), then scope: the site that authorised the call (key → its site; user → `X-Ignite-Site`/`site`) supplies the patterns. Gateway-admin routes are unaffected.
+- Enforced on `GET /tags/read`, `/tags/browse` (results filtered; a browse of a folder outside scope → 403), `/tags/history`, `POST /tags/write`, `/sse` (explicit paths and folder patterns — the expansion is filtered, the `subscribed` count reflects what survived), `/alarms/status` and `/alarms/history` (rows filtered by alarm source path), `POST /alarms/acknowledge` (each event's source must be in scope). Provider names compare case-insensitively; paths exactly.
+- Out of scope by nature and documented as such: `/script/*` (runs gateway-wide Jython under the write tier — a site that must not run scripts should set `WriteSecurityLevel` to a role its users lack) and `/db/query` (named queries are project resources, not tags).
+- Violations return 403 `{"error":"tag path not permitted"}`; one DEBUG log line with site and path.
+- Config UI: a "Tag scope" textarea on the site form with the three example rows as placeholder text; Home → Launch cards unaffected.
+- Lab: `launch` → `[default]Launch/**`; `datacenter` → `[default]DC/**` (both demos then prove the boundary: the launch key's `/tags/read` of a `DC` path → 403).
+
+**Consequences:** one more field on an existing record (schema update via `updatePersistentRecords`, additive); a glob matcher (~40 lines, unit-tested) used by six routes; `demo/`-era clients that read arbitrary tags keep working as long as the field stays blank. Task: `task-65-site-tag-scope`.

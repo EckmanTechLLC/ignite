@@ -91,6 +91,9 @@ public class SiteRecord extends PersistentRecord {
     /** Name of the Ignition audit profile to log write operations to. Empty = no auditing. */
     public static final StringField AuditProfileName = new StringField(META, "AuditProfileName");
 
+    /** Tag allow-list patterns (one per line or comma-separated). Blank = unrestricted (ADR-004 A1). */
+    public static final StringField TagPathPatterns = new StringField(META, "TagPathPatterns", 4096);
+
     // -------------------------------------------------------------------------
     // RecordMeta contract
     // -------------------------------------------------------------------------
@@ -222,5 +225,13 @@ public class SiteRecord extends PersistentRecord {
 
     public void setAuditProfileName(String value) {
         setString(AuditProfileName, value);
+    }
+
+    public String getTagPathPatterns() {
+        return getString(TagPathPatterns);
+    }
+
+    public void setTagPathPatterns(String value) {
+        setString(TagPathPatterns, value);
     }
 }

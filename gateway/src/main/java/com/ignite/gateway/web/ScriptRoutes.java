@@ -30,6 +30,10 @@ import java.util.regex.Pattern;
  * Security notes (ADR-004): write-tier callers can invoke any system.* function; this is an
  * accepted trade-off and the tier is not narrowed here. The execution timeout is response-only:
  * the worker thread is interrupted, not killed. Every execution is audited regardless of outcome.
+ *
+ * Tag scope (ADR-004 A1): out of scope by nature. The site's TagPathPatterns are NOT applied here;
+ * scripts run gateway-wide under the write tier. A site that must not run scripts should set
+ * WriteSecurityLevel to a role its users lack.
  */
 public final class ScriptRoutes {
 

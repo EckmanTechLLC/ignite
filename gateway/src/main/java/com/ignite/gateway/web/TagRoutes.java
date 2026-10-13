@@ -44,6 +44,9 @@ import java.util.concurrent.TimeUnit;
  *
  * Auth: X-Ignite-Key header or apiKey query param matched against any site's
  * configured API key. An active Ignition session (non-empty actor) is also accepted.
+ *
+ * Tag scope (ADR-004 A1): every path must lie in the resolved site's TagPathPatterns, else 403
+ * {"error":"tag path not permitted"} (all-or-nothing); browse results are filtered.
  */
 public final class TagRoutes {
 
@@ -141,6 +144,10 @@ public final class TagRoutes {
         }
 
         List<TagPath> tagPaths = parsePaths(pathsParam);
+        Object denied = checkScope(res, site, tagPaths);
+        if (denied != null) {
+            return denied;
+        }
         GatewayTagManager tagManager = context.getTagManager();
         List<QualifiedValue> values = tagManager.readAsync(tagPaths)
                 .get(TAG_TIMEOUT_SEC, TimeUnit.SECONDS);
@@ -209,6 +216,10 @@ public final class TagRoutes {
             writeValues.add(deserializeValue(item.get("value")));
         }
 
+        Object denied = checkScope(res, site, tagPaths);
+        if (denied != null) {
+            return denied;
+        }
         GatewayTagManager tagManager = context.getTagManager();
         List<QualityCode> results = tagManager.writeAsync(tagPaths, writeValues)
                 .get(TAG_TIMEOUT_SEC, TimeUnit.SECONDS);
@@ -254,6 +265,12 @@ public final class TagRoutes {
 
         TagPath tagPath = parseTagPath(pathStr);
 
+        TagScope scope = TagScope.forSite(site);
+        boolean root = pathStr.isEmpty();
+        if (root ? !scope.allowsRootBrowse() : !scope.allowsFolderBrowse(tagPath)) {
+            return TagScope.deny(res, log, site, pathStr);
+        }
+
         GatewayTagManager tagManager = context.getTagManager();
         Results<NodeDescription> browseResults = tagManager
                 .browseAsync(tagPath, BrowseFilter.NONE)
@@ -274,6 +291,11 @@ public final class TagRoutes {
                 // Child node with no fullPath — construct from parent + name
                 pathString = pathStr + "/" + node.getName();
             }
+            if (!scope.isUnrestricted()
+                    && !(root ? scope.allowsProvider(node.getName())
+                              : scope.allows(pathString) || scope.allowsFolderBrowse(pathString))) {
+                continue;
+            }
             child.addProperty("path", pathString);
             child.addProperty("hasChildren", node.hasChildren());
             if (node.getObjectType() != null) {
@@ -288,7 +310,7 @@ public final class TagRoutes {
         JsonObject result = new JsonObject();
         result.addProperty("path", pathStr);
         result.add("children", children);
-        result.addProperty("count", browseResults.getReturnedSize());
+        result.addProperty("count", scope.isUnrestricted() ? browseResults.getReturnedSize() : children.size());
         return result;
     }
 
@@ -340,6 +362,10 @@ public final class TagRoutes {
         }
 
         List<TagPath> tagPaths = parsePaths(pathsParam);
+        Object denied = checkScope(res, site, tagPaths);
+        if (denied != null) {
+            return denied;
+        }
 
         TagHistoryManager histManager = context.getTagHistoryManager();
         if (histManager == null) {
@@ -405,6 +431,17 @@ public final class TagRoutes {
     // -------------------------------------------------------------------------
     // Value helpers
     // -------------------------------------------------------------------------
+
+    /** All-or-nothing scope check: null when every path is in the site's tag scope, else the 403 body. */
+    private static Object checkScope(HttpServletResponse res, SiteRecord site, List<TagPath> paths) {
+        TagScope scope = TagScope.forSite(site);
+        for (TagPath p : paths) {
+            if (!scope.allows(p)) {
+                return TagScope.deny(res, log, site, p);
+            }
+        }
+        return null;
+    }
 
     /** Parse a comma-separated list of tag path strings. */
     private static List<TagPath> parsePaths(String param) {

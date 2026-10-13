@@ -56,6 +56,13 @@ public class SessionStore {
         if (token != null) sessions.remove(token);
     }
 
+    /** Removes every token belonging to the user; returns how many were removed. */
+    public int invalidateUser(String username) {
+        int before = sessions.size();
+        sessions.entrySet().removeIf(e -> e.getValue().username.equals(username));
+        return Math.max(0, before - sessions.size());
+    }
+
     public void cleanup() {
         sessions.entrySet().removeIf(e -> e.getValue().isExpired());
     }

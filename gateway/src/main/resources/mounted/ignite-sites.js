@@ -279,6 +279,7 @@ System.register(['react'], function (_export) {
                 envVars: '', corsOrigins: '', apiKey: '', servePath: '/',
                 enabled: true,
                 writeSecurityLevel: '', adminSecurityLevel: '', auditProfileName: '',
+                tagPathPatterns: '',
             };
 
             // ── Toast component ──────────────────────────────────────────────
@@ -337,6 +338,7 @@ System.register(['react'], function (_export) {
                     writeSecurityLevel: site.writeSecurityLevel || '',
                     adminSecurityLevel: site.adminSecurityLevel || '',
                     auditProfileName: site.auditProfileName || '',
+                    tagPathPatterns: site.tagPathPatterns || '',
                 } : Object.assign({}, BLANK));
                 var form = _s0[0];
                 var setForm = _s0[1];
@@ -533,6 +535,12 @@ System.register(['react'], function (_export) {
                                         inp('auditProfileName', 'text', { placeholder: 'e.g. default' }),
                                         h('div', { style: S.hint }, 'Ignition audit profile for write operations. Empty = no auditing.'),
                                     ),
+                                    h('div', { style: S.formGroup },
+                                        h('label', { style: S.label }, 'Tag scope'),
+                                        h('textarea', Object.assign({ style: S.textarea, rows: 3,
+                                            placeholder: '[default]Launch/**\n[default]Launch/Clock/*\n[default]Launch/Clock/Phase' }, field('tagPathPatterns'))),
+                                        h('div', { style: S.hint }, 'One pattern per line: /** = folder and everything below, /* = direct children, none = one tag. Blank = unrestricted.'),
+                                    ),
                                 ),
 
                                 // Test connection (edit mode only)
@@ -587,6 +595,10 @@ System.register(['react'], function (_export) {
                 },
                     h('td', { style: S.td },
                         h('strong', null, site.name),
+                        site.tagPathPatterns && site.tagPathPatterns.trim()
+                            ? h('span', { style: Object.assign({}, S.badge, S.badgeSyncing, { marginLeft: '6px' }),
+                                title: site.tagPathPatterns }, 'scoped')
+                            : null,
                     ),
                     h('td', { style: S.td },
                         h('code', { style: { fontSize: '12px' } }, site.mountPath),

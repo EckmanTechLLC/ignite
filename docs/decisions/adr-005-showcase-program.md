@@ -110,3 +110,37 @@ New site records `launch` and `datacenter` (repo `ignite-showcase`, `branch=depl
 | task-59-polish-perf | Lighthouse, 4K, SSE coalescing measurements, screenshots in `docs/` | 58 |
 
 Demos 3 (Microgrid) and 4 (Brewery) will be amendments to this ADR once 1 and 2 ship.
+
+## Amendment A1 — Demo 3: Campus Microgrid (2026-10-13, Accepted)
+
+**Why now:** demos 1 and 2 shipped (tasks 49–64); the sim pattern, `@ignite/client`, deploy branch and site model are proven. Demo 3 adds the third framework and a history-heavy story (forecast vs actual, cost), which the first two only touched.
+
+### Stack
+`microgrid/` — **Svelte 5 + Vite + TypeScript**, 2D animated **single-line diagram** (SVG) with ECharts (lazy) for trends. Third framework on the same `@ignite/client`; Svelte's compiled reactivity suits dozens of animated conductors. Shared theme, own accent.
+
+### One screen
+A campus single-line diagram as the hero: utility intertie → main switchboard → feeders to **PV arrays** (4 arrays, 6 strings each, 2 inverters per array), **BESS** (2 containers), **genset**, **EV charging** (10 chargers), **buildings** (3 loads incl. HVAC). Conductors animate with direction and magnitude of power flow; the sun arc and cloud layer at the top drive irradiance; a tariff strip shows the time-of-use band; a cost/CO₂ ticker runs live. Overlays as before: Trends (T), Alarms (A), Dispatch controls (C), Identity/Audit (L), Help (?). Click any element → its trend.
+
+### Simulation (`sim/microgrid/`, tags under `[default]MG/`)
+- **Time:** compressed day — 24 simulated hours in **12 real minutes** by default (`_Sim_/SpeedFactor` = 120), adjustable; the sim clock (`MG/Time/HourOfDay`, `DayIndex`, `Season`) drives the sun model (elevation → clear-sky irradiance), a cloud field (random walk + fronts), ambient temperature, building load profiles and the tariff schedule.
+- **PV:** per-string DC kW from irradiance × area × temp-derated efficiency; inverter AC kW with clipping at rated; per-inverter state (`RUN|CURTAILED|FAULT|OFF`); curtailment setpoints; array-level `Health`.
+- **BESS:** 2 × 500 kWh / 250 kW; SOC, kW (±), cell temp, round-trip losses, `Mode` (`PEAK_SHAVE|SELF_CONSUME|BACKUP|IDLE|ISLAND`), throughput counter (degradation hint), limits by temp.
+- **Grid:** import/export kW, V, Hz, `Available`, `Islanded`, time-of-use tariff ($/kWh by band), demand charge window, daily import kWh and cost, CO₂ intensity curve → tCO₂ avoided.
+- **Genset:** 400 kW diesel, `State`, fuel, start sequence (10 s), only in island mode.
+- **EV:** 10 chargers × 22 kW; sessions arrive with a daily pattern (rush hour 07–09 and 17–19); per-charger kW, SOC of the connected car, `Smart` curtailment on grid stress.
+- **Loads:** 3 buildings with weekday profiles + HVAC term from ambient; critical-load flag on one.
+- **KPIs:** net load, PV fraction, self-sufficiency %, peak import today vs baseline, $ today vs baseline, CO₂ avoided — the baseline is "no PV/BESS" computed in the same tick.
+- **Scenarios (`mg.*` library):** `grid_outage` (island → BESS carries critical load → genset start → PV curtails to balance → resync on `grid_restore`), `cloud_front_ev_rush` (PV collapses during the evening EV ramp; dispatch shifts; tariff cost spikes), `peak_shave_day` (BESS dispatches against the forecast; compare with baseline), `inverter_fault` (array 2 inverter B fault, string losses, alarm cascade, `clear_fault`). Plus `set_speed`, `set_hour` (jump), `set_mode`, `set_cloudiness`, `status`.
+- **Alarms:** inverter fault, string underperformance (vs siblings), BESS temp high / SOC low in backup, grid lost, islanded, frequency/voltage out of band, charger fault, demand threshold exceeded.
+- **History:** KPIs and feeder kW at 1 s on change; strings at 10 s with deadband; the forecast curve is written as a tag (`MG/Forecast/PVkW`, `LoadkW`) so "forecast vs actual" is a plain two-series history chart.
+
+### Deployment
+Site `microgrid` (servePath `microgrid`, `TagPathPatterns` = `[default]MG/**`, same tiers/audit); Home → Launch card appears automatically.
+
+### Tasks
+| Task | Scope | Depends on |
+|---|---|---|
+| task-66-sim-microgrid | `sim/microgrid` tag model (~400 tags), timer + `mg` library, scenarios; loaded and proven on the lab | 50, 52 pattern |
+| task-67-mg-scene | Svelte app: single-line diagram, sun/cloud strip, flow animation, tariff/cost ticker, HUD, `?perf`, help | 49, 66 |
+| task-68-mg-overlays | Trends (forecast vs actual, click-to-trend), alarms + ack, dispatch controls, identity/audit, feature matrix | 67 |
+| task-69-mg-ship | site record + scope, smoke matrix, screenshots, perf doc, runbook update, README | 65, 68 |

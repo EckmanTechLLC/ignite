@@ -5,6 +5,7 @@ import com.ignite.gateway.records.IgniteSettingsRecord;
 import com.ignite.gateway.records.SiteRecord;
 import com.inductiveautomation.ignition.common.gson.JsonArray;
 import com.inductiveautomation.ignition.common.gson.JsonObject;
+import com.inductiveautomation.ignition.common.gson.JsonParser;
 import com.inductiveautomation.ignition.common.user.AuthenticatedUser;
 import com.inductiveautomation.ignition.common.user.BasicAuthChallenge;
 import com.inductiveautomation.ignition.common.util.LoggerEx;
@@ -34,7 +35,8 @@ import java.util.List;
  *         {
  *           "authenticated": true,
  *           "user": "admin",
- *           "authMethod": "session",   // or "apiKey"
+ *           "authMethod": "bearer",    // "bearer" | "web" | "apiKey"; "session" is no longer emitted
+ *           "canLogout": true,         // true only for "bearer"
  *           "securityLevels": ["Administrator", "Operator"],
  *           "permissions": { "canWrite": true, "canAdmin": true, "canAdminGateway": false },
  *           "site": "plant1"
@@ -45,6 +47,7 @@ import java.util.List;
  *           "authenticated": false,
  *           "user": null,
  *           "authMethod": null,
+ *           "canLogout": false,
  *           "securityLevels": [],
  *           "permissions": { "canWrite": false, "canAdmin": false, "canAdminGateway": false },
  *           "site": null
@@ -93,7 +96,7 @@ public final class AuthRoutes {
         routes.newRoute("/auth/session")
                 .method(HttpMethod.GET)
                 .type(RouteGroup.TYPE_JSON)
-                .handler((req, res) -> guarded(req, res, () -> getSession(req, res, context)))
+                .handler((req, res) -> guarded(req, res, () -> getSession(req, res, context, sessionStore)))
                 .accessControl(AccessControlStrategy.OPEN_ROUTE)
                 .mount();
 
@@ -126,26 +129,27 @@ public final class AuthRoutes {
      * Returns identity and permission info for the current request.
      * Never returns 401 — unauthenticated requests get { "authenticated": false }.
      */
-    private static Object getSession(RequestContext req, HttpServletResponse res, GatewayContext context) {
+    private static Object getSession(RequestContext req, HttpServletResponse res, GatewayContext context,
+                                     SessionStore sessionStore) {
         boolean isAuthenticated = AuthUtil.isAuthorized(req, context);
 
         // Determine auth method
         String authMethod = null;
         String user = null;
         if (isAuthenticated) {
+            // Same order as AuthUtil.getActorIdentity: Bearer, web session, API key
+            SessionStore.SessionInfo bearer = sessionStore.getSession(AuthUtil.extractBearerToken(req));
+            String webUser = AuthUtil.webSessionUser(req).orElse(null);
             String apiKey = AuthUtil.extractApiKey(req);
-            String actor  = AuthUtil.webSessionUser(req).orElse(null);
-            String bearerToken = AuthUtil.extractBearerToken(req);
-            if (apiKey != null && !apiKey.isBlank()) {
-                authMethod = "apiKey";
-                // For API key auth, actor may be empty; use the key-based identity
-                user = AuthUtil.getActorIdentity(req, context);
-            } else if (bearerToken != null) {
+            if (bearer != null) {
                 authMethod = "bearer";
+                user = bearer.username;
+            } else if (webUser != null) {
+                authMethod = "web";
+                user = webUser;
+            } else if (apiKey != null && !apiKey.isBlank()) {
+                authMethod = "apiKey";
                 user = AuthUtil.getActorIdentity(req, context);
-            } else if (actor != null && !actor.isBlank()) {
-                authMethod = "session";
-                user = actor;
             }
         }
 
@@ -181,6 +185,7 @@ public final class AuthRoutes {
         } else {
             result.add("authMethod", null);
         }
+        result.addProperty("canLogout", "bearer".equals(authMethod));
         result.add("securityLevels", securityLevels);
         result.add("permissions", permissions);
         if (site != null) {
@@ -287,21 +292,39 @@ public final class AuthRoutes {
     /**
      * POST /auth/logout
      *
-     * Invalidates the Bearer token session.
-     * Response: {"success": true}
+     * Invalidates the caller's Bearer token only. Optional body {"everywhere": true}
+     * invalidates every token of that user. Web-session / API-key callers get 400.
+     * Response: {"loggedOut": n}
      */
     private static Object doLogout(RequestContext req, HttpServletResponse res,
                                     GatewayContext context, SessionStore sessionStore) {
         String token = AuthUtil.extractBearerToken(req);
         SessionStore.SessionInfo info = sessionStore.getSession(token);
-        sessionStore.invalidate(token);
-        if (info != null) {
-            AuditUtil.audit(context, SettingsUtil.get(context).getDefaultAuditProfile(),
-                    "Logout", info.username, "success", info.username, req);
+        if (info == null) {
+            throw new AuthUtil.BadRequestException("no bearer session to log out");
         }
+        boolean everywhere = false;
+        try {
+            String body = req.readBody();
+            if (body != null && !body.isBlank()) {
+                JsonObject obj = JsonParser.parseString(body).getAsJsonObject();
+                everywhere = obj.has("everywhere") && obj.get("everywhere").getAsBoolean();
+            }
+        } catch (Exception e) {
+            throw new AuthUtil.BadRequestException("Invalid JSON body");
+        }
+        int n;
+        if (everywhere) {
+            n = sessionStore.invalidateUser(info.username);
+        } else {
+            sessionStore.invalidate(token);
+            n = 1;
+        }
+        AuditUtil.audit(context, SettingsUtil.get(context).getDefaultAuditProfile(),
+                "Logout", info.username, "success", info.username, req);
 
         JsonObject result = new JsonObject();
-        result.addProperty("success", true);
+        result.addProperty("loggedOut", n);
         return result;
     }
 

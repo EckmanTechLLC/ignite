@@ -64,6 +64,10 @@ import java.util.concurrent.atomic.AtomicLong;
  *   Reconnect:   event: reconnect / data: {"type":"reconnect"}   (just before the server closes)
  *   Heartbeat:   ": ping" comment every HEARTBEAT_POLL_SEC when idle
  *
+ * Tag scope (ADR-004 A1): explicit paths outside the site's TagPathPatterns give 403
+ * {"error":"tag path not permitted"}; folder patterns are expanded then filtered, "subscribed"
+ * counts the survivors (none = 403); alarm events are filtered by source.
+ *
  * Auth: X-Ignite-Key header or apiKey query param matched against any site's API key.
  * An active Ignition session (non-empty actor) is also accepted.
  *
@@ -208,7 +212,7 @@ public final class SubscriptionRoutes {
         Conn conn = new Conn();
         STREAMS.add(conn);
         try {
-            runStream(req, res, context, conn);
+            runStream(req, res, context, conn, site);
         } finally {
             STREAMS.remove(conn);
             ACTIVE.decrementAndGet();
@@ -216,7 +220,8 @@ public final class SubscriptionRoutes {
     }
 
     private static void runStream(RequestContext req, HttpServletResponse res,
-                                  GatewayContext context, Conn conn) throws Exception {
+                                  GatewayContext context, Conn conn, SiteRecord site) throws Exception {
+        TagScope scope = TagScope.forSite(site);
         GatewayTagManager tagManager = context.getTagManager();
 
         // --- parse params ---
@@ -239,11 +244,19 @@ public final class SubscriptionRoutes {
                     if (baseParsed == null) {
                         throw new AuthUtil.BadRequestException("invalid tag path: " + trimmed);
                     }
-                    expandFolder(tagManager, baseParsed, base, recursive, seen);
+                    if (!scope.allowsFolderBrowse(baseParsed)) {
+                        denyScope(res, site, trimmed);
+                        return;
+                    }
+                    expandFolder(tagManager, baseParsed, base, recursive, seen, scope);
                 } else {
                     TagPath parsed = TagPathParser.parseSafe(trimmed);
                     if (parsed == null) {
                         throw new AuthUtil.BadRequestException("invalid tag path: " + trimmed);
+                    }
+                    if (!scope.allows(parsed)) {
+                        denyScope(res, site, trimmed);
+                        return;
                     }
                     if (seen.add(parsed.toString())) {
                         checkCap(seen.size());
@@ -255,6 +268,10 @@ public final class SubscriptionRoutes {
                 if (tp != null) {
                     tagPaths.add(tp);
                 }
+            }
+            if (!scope.isUnrestricted() && tagPaths.isEmpty()) {
+                denyScope(res, site, pathsParam);
+                return;
             }
         }
 
@@ -301,7 +318,7 @@ public final class SubscriptionRoutes {
 
             // --- alarm listener ---
             if (wantsAlarms) {
-                alarmListener = buildAlarmListener(conn);
+                alarmListener = buildAlarmListener(conn, scope);
                 try {
                     context.getAlarmManager().addListener(alarmQPath, alarmListener);
                 } catch (Exception e) {
@@ -360,6 +377,12 @@ public final class SubscriptionRoutes {
         }
     }
 
+    /** Writes the 403 "tag path not permitted" JSON body (stream not opened). */
+    private static void denyScope(HttpServletResponse res, SiteRecord site, Object path) throws java.io.IOException {
+        res.setContentType("application/json");
+        res.getWriter().write(TagScope.deny(res, log, site, path).toString());
+    }
+
     /** Writes and flushes; false when the client is gone (PrintWriter swallows IOException/EofException). */
     private static boolean send(PrintWriter writer, String data) {
         try {
@@ -399,7 +422,7 @@ public final class SubscriptionRoutes {
      * instances are descended into when {@code recursive}. Same provider/path syntax as /tags/browse.
      */
     private static void expandFolder(GatewayTagManager tagManager, TagPath folder, String folderStr,
-                                     boolean recursive, Set<String> out)
+                                     boolean recursive, Set<String> out, TagScope scope)
             throws Exception {
         Results<NodeDescription> results = tagManager.browseAsync(folder, BrowseFilter.NONE)
                 .get(TAG_TIMEOUT_SEC, TimeUnit.SECONDS);
@@ -414,15 +437,15 @@ public final class SubscriptionRoutes {
                     : folderStr + "/" + node.getName();
             TagObjectType type = node.getObjectType();
             if (type == TagObjectType.AtomicTag) {
-                if (out.add(childStr)) {
+                if (scope.allows(childStr) && out.add(childStr)) {
                     checkCap(out.size());
                 }
             } else if (recursive && node.hasChildren()
                     && (type == TagObjectType.Folder || type == TagObjectType.UdtInstance)) {
                 TagPath childPath = full != null && !full.toString().isEmpty()
                         ? full : TagPathParser.parseSafe(childStr);
-                if (childPath != null) {
-                    expandFolder(tagManager, childPath, childStr, true, out);
+                if (childPath != null && scope.allowsFolderBrowse(childPath)) {
+                    expandFolder(tagManager, childPath, childStr, true, out, scope);
                 }
             }
         }
@@ -461,7 +484,7 @@ public final class SubscriptionRoutes {
     // Alarm listener factory
     // -------------------------------------------------------------------------
 
-    private static AlarmListener buildAlarmListener(Conn conn) {
+    private static AlarmListener buildAlarmListener(Conn conn, TagScope scope) {
         return new AlarmListener() {
             @Override
             public void onActive(AlarmEvent event) {
@@ -484,6 +507,9 @@ public final class SubscriptionRoutes {
             }
 
             private void enqueue(String state, AlarmEvent event) {
+                if (!scope.allowsAlarmSource(event.getSource() != null ? event.getSource().toString() : null)) {
+                    return;
+                }
                 JsonObject msg = new JsonObject();
                 msg.addProperty("type", "alarm");
                 msg.addProperty("source",

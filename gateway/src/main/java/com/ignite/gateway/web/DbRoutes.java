@@ -44,6 +44,9 @@ import java.util.Optional;
  *
  * Auth: X-Ignite-Key header or apiKey query param matched against any site's
  * configured API key. An active Ignition session (non-empty actor) is also accepted.
+ *
+ * Tag scope (ADR-004 A1): out of scope by nature. Named queries are project resources, not tags,
+ * so the site's TagPathPatterns are NOT applied here.
  */
 public final class DbRoutes {
 
