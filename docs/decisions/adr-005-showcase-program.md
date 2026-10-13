@@ -140,7 +140,7 @@ Site `microgrid` (servePath `microgrid`, `TagPathPatterns` = `[default]MG/**`, s
 ### Tasks
 | Task | Scope | Depends on |
 |---|---|---|
-| task-66-sim-microgrid | `sim/microgrid` tag model (~400 tags), timer + `mg` library, scenarios; loaded and proven on the lab | 50, 52 pattern |
-| task-67-mg-scene | Svelte app: single-line diagram, sun/cloud strip, flow animation, tariff/cost ticker, HUD, `?perf`, help | 49, 66 |
-| task-68-mg-overlays | Trends (forecast vs actual, click-to-trend), alarms + ack, dispatch controls, identity/audit, feature matrix | 67 |
-| task-69-mg-ship | site record + scope, smoke matrix, screenshots, perf doc, runbook update, README | 65, 68 |
+| task-66-sim-microgrid | `sim/microgrid` tag model (~400 tags), timer + `mg` library, scenarios; loaded and proven on the lab (complete) | 50, 52 pattern |
+| task-67-mg-scene | Svelte app: single-line diagram, sun/cloud strip, flow animation, tariff/cost ticker, HUD, `?perf`, help (complete) | 49, 66 |
+| task-68-mg-overlays | Trends (forecast vs actual, click-to-trend), alarms + ack, dispatch controls, identity/audit, feature matrix (complete) | 67 |
+| task-69-mg-ship | site record + scope, smoke matrix, screenshots, perf doc, runbook update, README (complete) | 65, 68 |

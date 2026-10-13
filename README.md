@@ -44,16 +44,17 @@ The full design is in [ADR-004](docs/decisions/adr-004-auth-hardening.md), build
 
 ## Showcase
 
-Two demos live in [EckmanTechLLC/ignite-showcase](https://github.com/EckmanTechLLC/ignite-showcase) (`deploy` branch served by two site records, see [ADR-005](docs/decisions/adr-005-showcase-program.md)). Each is a single full-viewport screen over a gateway-side simulation, driven only through the routes below. The earlier dairy-plant demo (`demo/`, ADR-002) is retired; its source stays in this repo.
+Three demos live in [EckmanTechLLC/ignite-showcase](https://github.com/EckmanTechLLC/ignite-showcase) (`deploy` branch served by three site records, see [ADR-005](docs/decisions/adr-005-showcase-program.md) and Amendment A1). Each is a single full-viewport screen over a gateway-side simulation, driven only through the routes below. The earlier dairy-plant demo (`demo/`, ADR-002) is retired; its source stays in this repo.
 
 | Demo | Mount | Stack | Shows |
 |---|---|---|---|
 | Launch Operations | `/data/ignite/s/launch/` | React, Three.js | A rocket countdown with live propellant, ground and weather data, holds and aborts |
 | Data Center | `/data/ignite/s/datacenter/` | Vue 3, SVG | A 40-rack hall with power, cooling, UPS and alarm storms |
+| Campus Microgrid | `/data/ignite/s/microgrid/` | Svelte 5, SVG | A single-line diagram of PV, batteries, genset and EV charging with forecast-vs-actual history, tariff and cost, islanding and faults |
 
 Route families they exercise:
 
-- `GET /sse` - one folder subscription per page (111 tags / 675 tags), with an initial snapshot.
+- `GET /sse` - one folder subscription per page (111 / 675 / 405 tags), with an initial snapshot.
 - `GET /tags/history` - trend charts and the trial/historian health probe.
 - `GET /alarms/status`, `POST /alarms/acknowledge` - alarm boards, acknowledge tier-gated.
 - `POST /script/library` - scenario, speed and fault controls through project library functions.
