@@ -1,7 +1,7 @@
 # ADR-002: Showcase Demo — Dairy Plant Dashboard
 
 **Date:** 2026-03-25
-**Status:** Accepted
+**Status:** Superseded by ADR-005 (2026-10-12)
 **Deciders:** @etl
 
 ## Context

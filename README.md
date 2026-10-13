@@ -5,7 +5,7 @@ Ignite is an Ignition 8.3 gateway module that turns the gateway into a host for 
 ## What it does
 
 - **Static sites**: each site is synced from a git repository and served under `/data/ignite/s/<mount>/`.
-- **API**: REST plus Server-Sent Events (SSE) for tags, alarms, history, named queries and scripts.
+- **API**: REST plus Server-Sent Events (SSE) for tags, alarms, history, named queries and scripts. The live stream is documented in [docs/api/sse.md](docs/api/sse.md).
 - **Auth**: a per-site API key gives read access; write and admin operations require an Ignition user holding the configured security level.
 - **Configuration**: manage sites and gateway settings in the Gateway config UI under Connections > Ignite > Sites.
 
@@ -41,6 +41,26 @@ The module is unsigned, so the gateway must allow unsigned modules: add `-Dignit
 - Script calls require the write tier and strictly validated function paths.
 
 The full design is in [ADR-004](docs/decisions/adr-004-auth-hardening.md), building on [ADR-003](docs/decisions/adr-003-auth-audit-scripts.md).
+
+## Showcase
+
+Two demos live in [EckmanTechLLC/ignite-showcase](https://github.com/EckmanTechLLC/ignite-showcase) (`deploy` branch served by two site records, see [ADR-005](docs/decisions/adr-005-showcase-program.md)). Each is a single full-viewport screen over a gateway-side simulation, driven only through the routes below. The earlier dairy-plant demo (`demo/`, ADR-002) is retired; its source stays in this repo.
+
+| Demo | Mount | Stack | Shows |
+|---|---|---|---|
+| Launch Operations | `/data/ignite/s/launch/` | React, Three.js | A rocket countdown with live propellant, ground and weather data, holds and aborts |
+| Data Center | `/data/ignite/s/datacenter/` | Vue 3, SVG | A 40-rack hall with power, cooling, UPS and alarm storms |
+
+Route families they exercise:
+
+- `GET /sse` - one folder subscription per page (111 tags / 675 tags), with an initial snapshot.
+- `GET /tags/history` - trend charts and the trial/historian health probe.
+- `GET /alarms/status`, `POST /alarms/acknowledge` - alarm boards, acknowledge tier-gated.
+- `POST /script/library` - scenario, speed and fault controls through project library functions.
+- `POST /auth/login`, `GET /auth/session`, `POST /auth/logout` - viewer, operator and administrator tiers.
+- `GET /audit/logs` - audit view for administrators.
+
+Lab operation is in [docs/runbook-lab-demo.md](docs/runbook-lab-demo.md).
 
 ## Status
 
