@@ -52,8 +52,8 @@ Four demos live in [EckmanTechLLC/ignite-showcase](https://github.com/EckmanTech
 | Demo | Mount | Stack | Shows |
 |---|---|---|---|
 | Launch Operations | `/data/ignite/s/launch/` | React, Three.js | A rocket countdown with live propellant, ground and weather data, holds and aborts |
-| Data Center | `/data/ignite/s/datacenter/` | Vue 3, SVG | A 40-rack hall with power, cooling, UPS and alarm storms |
-| Campus Microgrid | `/data/ignite/s/microgrid/` | Svelte 5, SVG | A single-line diagram of PV, batteries, genset and EV charging with forecast-vs-actual history, tariff and cost, islanding and faults |
+| Data Center | `/data/ignite/s/datacenter/` | Vue 3, TresJS (Three.js) | A detailed procedural 3D hall (60 racks, CRAHs, UPS, PDUs, ATS, generator, roof chillers) with GPU airflow particles, a lit power and chilled-water path, camera presets 1 to 5, and thermal and power-loss scenarios (CRAH failure, utility loss) |
+| Campus Microgrid | `/data/ignite/s/microgrid/` | Svelte 5, PixiJS | An oblique 2.5D campus map (PV fields, batteries, genset, EV lot, substation) with a real sun, projected shadows, drifting cloud shadows and particle power flows, plus forecast-vs-actual history, tariff and cost, islanding and faults |
 | Craft Brewery | `/data/ignite/s/brewery/` | Solid, Pixi (WebGL) | An isometric brewery: brewhouse, fermentation cellar, packaging line and utilities with batch genealogy, ISA-88 phases, QA holds, OEE and glycol/line-down scenarios |
 
 Route families they exercise:

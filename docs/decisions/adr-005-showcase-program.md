@@ -179,3 +179,35 @@ Site `brewery` (servePath `brewery`, `TagPathPatterns` = `[default]BR/**`, same 
 | task-73-br-scene | Solid + Pixi app: isometric plant, flows/particles, vessel cards, batch Gantt strip, OEE tile, HUD, `?perf`, help (complete) | 72 |
 | task-74-br-overlays | Trends (fermentation curves, OEE waterfall, click-to-trend), alarms + ack, controls by tier, Batch overlay (ISA-88 + genealogy + QA), identity/audit, feature matrix (complete) | 73 |
 | task-75-br-ship | enable + sync, smoke matrix, perf/a11y, screenshots, perf doc, runbook, README (complete) | 74 |
+
+## Amendment A3 — Hero scene redo for demos 2 and 3 (2026-10-14, Accepted)
+
+**Why:** operator review after demo 4: Data Center and Campus Microgrid read as tile dashboards — grids of numbers with a diagram between them, which a Perspective view could reproduce. The program's point is what Perspective cannot easily do: one SSE batch per animation frame driving a GPU render loop over hundreds of tags. Launch (3D pad) and Brewery (GPU isometric plant) show that; demos 2 and 3 do not. Frameworks, sims, tag models, site records and the overlays (T/A/C/L/?) stay; only the hero scene and the HUD framing change.
+
+### Demo 2 — Data Center: 3D data hall (`datacenter/`, Vue 3 + TresJS)
+- **Renderer:** TresJS (`@tresjs/core`, Vue's Three.js renderer) + `three` (same major as Launch) + `@tresjs/cientos` (orbit controls, helpers). Procedural geometry only. Post-processing bloom only if cheap (reuse the Launch approach; optional).
+- **Scene:** the hall as a room: raised floor, 6 rows × 10 racks with cold-aisle containment (translucent doors/roof), hot aisles, 4 CRAH units on the walls, overhead busway and the chilled-water loop as lit conductors; UPS A/B, PDUs, ATS and generator in a visible electrical room; chillers on the roof. Rack fronts glow by inlet temperature on the ASHRAE scale, with LED strips per rack (kW load) and a "zz"/offline state. **Airflow particles** (GPU points): emitted at each CRAH at a rate ∝ fan %, flowing under the floor, up through the cold aisle, through racks (heating → colour shift), into the hot aisle and back to the CRAH return — a stalled CRAH visibly starves its aisle and heat pools; heat shimmer over hot aisles. Power chain lights the live feed path (utility / generator / UPS on battery) with pulsing conductors.
+- **Camera:** cinematic idle orbit; presets (overview, cold aisle walk-through, hot aisle, electrical room, roof) on keys 1–5; click a rack / CRAH / UPS → selection (existing stores) with a focus fly-to; hover tooltip (DOM anchored).
+- **HUD:** thin edge strips instead of a top tile bar: PUE ring + IT/facility kW at top-left, hall mode, health/identity chips; the row-summary block and heat-scale legend become a collapsible legend. Overlays unchanged.
+- **Perf:** instanced meshes (racks, particles via `Points` with a custom shader), ≤ 60 draw calls at rest; reduced-motion → no particles, static camera.
+
+### Demo 3 — Campus Microgrid: living campus map (`microgrid/`, Svelte 5 + PixiJS)
+- **Renderer:** PixiJS 8 (already in the repo) with custom filters/shaders; procedural art only.
+- **Scene:** a top-down/slightly oblique campus: 4 PV fields (per-string rows), 2 BESS containers, genset enclosure, EV lot with 10 bays, 3 buildings with windows, utility substation at the fence, roads and trees. **Real sun:** shadows of buildings, trees and PV rows sweep with `Time/HourOfDay` (length and direction from `SunElevationDeg` and azimuth derived from hour); dawn/dusk colour grading; at night windows light up by building kW and streetlights come on. **Clouds:** a noise-shader cloud layer drifts (speed/opacity from `Cloudiness`); its shadow visibly dims the PV rows it covers — the per-array irradiance tags drive array brightness so the pass reads correctly. **Energy:** power as particle streams along buried conductors whose density ∝ kW and colour by source (PV amber, BESS blue, grid green, genset grey); islanding snaps the substation link open with a flash, the campus dims for a beat, the genset enclosure starts (exhaust shimmer) and the flows re-route; EV bays show cars arriving/leaving with SOC rings; curtailed arrays flicker; faulted inverters pulse red.
+- **Camera:** fit-to-viewport with gentle drift; pan/zoom; click any asset → selection (existing stores); hover tooltip.
+- **HUD:** the day/tariff strip stays (it is the clock) but becomes a translucent band over the scene; KPI tiles collapse into a compact left rail; cost/CO₂ ticker stays. Overlays unchanged.
+- **Perf:** sprites batched, one cloud filter pass, particles via a `ParticleContainer`; reduced-motion → static shadows, no particles.
+
+### Consequences
+- Data Center adds `three`, `@tresjs/core`, `@tresjs/cientos` (bundle +≈ 600 kB raw, lazy); the Lighthouse ≥ 90 target is carried as "recorded, not met on software GL" like Launch/Brewery.
+- Screenshots, `docs/perf.md`, READMEs and the runbook are refreshed per demo; `docs/ASSETS.md` stays procedural-only.
+
+### Tasks
+| Task | Scope | Depends on |
+|---|---|---|
+| task-80-dc-hall-3d | TresJS hall scene replacing `datacenter/src/hall` + HUD reframing; overlays rewired to the new selection; deploy (complete) | 56, 57 |
+| task-84-dc-hall-detail | detail pass on the hall (modelled racks, CRAHs, UPS/PDU/ATS, generator, chillers, containment, busways, pipework; merged batches, IBL, static shadows) (complete) | 80 |
+| task-81-dc-ship | close-out: smoke matrix, perf/a11y, screenshots, perf.md, READMEs, runbook (complete) | 80, 84 |
+| task-82-mg-campus | PixiJS campus scene replacing `microgrid/src/diagram` + HUD reframing; overlays rewired; deploy (complete) | 67, 68 |
+| task-85-mg-campus-detail | oblique 2.5D detail pass on the campus (modelled facades, racking, containers, enclosure, canopy, substation yard, kerbed roads, pond) (complete) | 82 |
+| task-83-mg-ship | close-out as above (complete) | 82, 85 |
