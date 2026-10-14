@@ -1,21 +1,22 @@
 # Runbook: lab demo
 
-How to prepare and run the three Ignite showcase demos on the lab gateway. No addresses or credentials are recorded here; get them from the operator.
+How to prepare and run the four Ignite showcase demos on the lab gateway. No addresses or credentials are recorded here; get them from the operator.
 
 ## Before a demo
 
 1. The gateway runs on a trial licence that expires every two hours. Open the gateway home page and reset the trial. Until then history and alarms stop updating.
-2. In the gateway, open Home > Ignite > Launch. It lists exactly three sites (launch, datacenter, microgrid); each card opens its demo.
-3. Open each demo once and wait about ten seconds. Launch should read "Live - 111 tags", Data Center "LIVE - 675 tags", Campus Microgrid "LIVE - 405 tags".
-4. Check the simulations are at rest: Launch scenario nominal, speed 4x, auto-cycle on; Data Center scenario normal, speed 4x, no faults; Campus Microgrid scenario normal, speed 120x (one simulated day per 12 real minutes), no faults, BESS B1 PEAK_SHAVE and B2 SELF_CONSUME. Acknowledge anything left on the alarm board (`A`).
+2. In the gateway, open Home > Ignite > Launch. It lists exactly four sites (launch, datacenter, microgrid, brewery); each card opens its demo.
+3. Open each demo once and wait about ten seconds. Launch should read "Live - 111 tags", Data Center "LIVE - 675 tags", Campus Microgrid "LIVE - 405 tags", Craft Brewery "LIVE - 908 tags" (the model has 1039 tags; the 131 engine-state tags are not streamed because one subscription is capped at 1000).
+4. Check the simulations are at rest: Launch scenario nominal, speed 4x, auto-cycle on; Data Center scenario normal, speed 4x, no faults; Campus Microgrid scenario normal, speed 120x (one simulated day per 12 real minutes), no faults, BESS B1 PEAK_SHAVE and B2 SELF_CONSUME; Craft Brewery scenario normal, speed 60x (one simulated hour per real minute), fermentation acceleration 8, no faults, packaging line RUNNING. Acknowledge anything left on the alarm board (`A`).
 
-## The three URLs
+## The four URLs
 
-Both live under the gateway's `/data/ignite/s/` path:
+All live under the gateway's `/data/ignite/s/` path:
 
 - Launch Operations: `/data/ignite/s/launch/`
 - Data Center: `/data/ignite/s/datacenter/`
 - Campus Microgrid: `/data/ignite/s/microgrid/` (site `microgrid`, tag scope `[default]MG/**`)
+- Craft Brewery: `/data/ignite/s/brewery/` (site `brewery`, tag scope `[default]BR/**`)
 
 ## Keys (all demos)
 
@@ -23,7 +24,7 @@ Both live under the gateway's `/data/ignite/s/` path:
 |---|---|
 | `T` | Trends / telemetry charts |
 | `A` | Alarm board |
-| `C` | Controls (sequencer and director in Launch; scenarios in Data Center; dispatch, faults and scenario in Campus Microgrid) |
+| `C` | Controls (sequencer and director in Launch; scenarios in Data Center; dispatch, faults and scenario in Campus Microgrid; brewing, line and QA actions plus the director in Craft Brewery). `B` opens the Batch overlay in the brewery |
 | `L` | Log in, session tier, audit |
 | `Esc` | Close panels |
 | `?` | Help / about (all demos); `?perf` in the URL plus `P` toggles the performance readout |
@@ -35,12 +36,13 @@ Anonymous visitors see everything but cannot operate. Log in as an operator to a
 - Launch: in `C`, start the LOX leak scenario (`lox_leak_abort`). Pressure falls, a NO-GO hold follows and the count aborts, with the alarm chips lighting in the alarm board. Allow the cycle to recycle afterwards, or press recycle.
 - Data Center: in `C`, trigger utility loss. The UPS carries the hall, the generator starts, and rack inlet alarms appear in the board; restore utility to recover. Use "restore all" to return to normal.
 - Campus Microgrid (the show-piece): log in as an operator, press `C`, run Grid outage (script `mg.grid_outage()`). The utility opens, the bus and feeders go red, buildings 1 and 3 are shed, the genset counts down and starts, PV curtails to balance and the mode chip reads ISLAND then GENSET. Press `A` for the Grid alarms. After a minute run Grid restore (`mg.grid_restore()`): the campus resynchronises after a few seconds, the genset cools down and PV is released. Other pieces: Fault A2-B (inverter fault cascade in the alarm board, then Clear), Jump to hour, and for an administrator the scenario and speed buttons.
+- Craft Brewery: one batch takes about 50 real minutes, so the plant is always mid-brew. As an operator press `C` to start a batch, hold or resume the line; as an administrator set the scenario `filler_jam` (script `brew.set_scenario('filler_jam')`): the line goes DOWN with FILLER JAM on the filler, the OEE tile gives the reason and the mode chip reads LINE_DOWN; clear it with `brew.clear_fault('filler_jam')` or the Clear button. The glycol show-piece is `glycol_failure` (`brew.set_scenario('glycol_failure')`): supply temperature climbs, the cellar fermenters drift and alarm in a cascade (press `A` for the timeline) and QA is at risk; `brew.glycol_restore()` recovers it. Press `B` on a strip bar for the batch's ISA-88 phases, QA results and genealogy; `contamination` puts a batch on QA HOLD.
 
-After a demo, set Launch back to nominal at 4x with auto-cycle on, Data Center to normal at 4x, Campus Microgrid to scenario normal at 120x with no faults (Controls, or `mg.restore()`), and acknowledge remaining alarms.
+After a demo, set Launch back to nominal at 4x with auto-cycle on, Data Center to normal at 4x, Campus Microgrid to scenario normal at 120x with no faults (Controls, or `mg.restore()`), Craft Brewery to scenario normal at 60x with fermentation acceleration 8, no faults and the line resumed (Controls, or `brew.restore()` then `brew.resume_line()`), and acknowledge remaining alarms.
 
 ## Site keys
 
-Each site has its own read-tier API key set on the site record (Home > Ignite > Launch, or `PUT /sites/{id}` as an administrator); the gateway injects it into the served page, so there is nothing to type. To rotate the microgrid key, generate a random value, `PUT /sites/5 {"apiKey": "<key>"}` and `POST /sites/5/sync`; the key opens only `[default]MG/**`. Keep rotated keys out of tracked files.
+Each site has its own read-tier API key set on the site record (Home > Ignite > Launch, or `PUT /sites/{id}` as an administrator); the gateway injects it into the served page, so there is nothing to type. To rotate the microgrid key, generate a random value, `PUT /sites/5 {"apiKey": "<key>"}` and `POST /sites/5/sync`; the key opens only `[default]MG/**`. The brewery works the same with site 6 (`[default]BR/**`). Open pages hold the old key until reloaded, and a rotation during a long run ends the live stream at its next reconnect. Keep rotated keys out of tracked files.
 
 ## "History / alarms unavailable"
 
