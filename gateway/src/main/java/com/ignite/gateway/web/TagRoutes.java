@@ -275,6 +275,10 @@ public final class TagRoutes {
         Results<NodeDescription> browseResults = tagManager
                 .browseAsync(tagPath, BrowseFilter.NONE)
                 .get(TAG_TIMEOUT_SEC, TimeUnit.SECONDS);
+        if (browseResults == null || browseResults.getResults() == null) {
+            // browse of a non-existent folder/provider returns no result list
+            throw new AuthUtil.BadRequestException("tag folder not found: " + pathStr);
+        }
 
         JsonArray children = new JsonArray();
         for (NodeDescription node : browseResults.getResults()) {

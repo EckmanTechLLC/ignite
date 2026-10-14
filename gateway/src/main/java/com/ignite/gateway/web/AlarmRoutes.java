@@ -253,7 +253,8 @@ public final class AlarmRoutes {
      *   { "ids": ["uuid1", "uuid2", ...] }   — array form
      *   { "id":  "uuid1" }                   — single-id shorthand (also accepted)
      *
-     * Response: { "acknowledged": N }
+     * Response: { "acknowledged": n, "requested": m } — n counts requested ids that are acked after the call
+     * (already-acked included; unknown ids not counted).
      */
     private static Object acknowledgeAlarms(RequestContext req, HttpServletResponse res,
                                              GatewayContext context) throws Exception {
@@ -326,18 +327,29 @@ public final class AlarmRoutes {
                 }
             }
             EventData ackData = new EventData(System.currentTimeMillis());
-            Set<UUID> acknowledged = context.getAlarmManager().acknowledgeBulk(uuids, ackData);
+            context.getAlarmManager().acknowledgeBulk(uuids, ackData);
+
+            // acknowledgeBulk returns only state-changed ids (empty for Cleared alarms): re-read the
+            // requested ids and count those now acked; unknown ids are simply not counted
+            Set<UUID> requested = new java.util.HashSet<>(uuids);
+            int acknowledged = 0;
+            for (AlarmEvent event : context.getAlarmManager().queryStatus(new AlarmFilter())) {
+                if (event.getId() != null && requested.contains(event.getId()) && event.isAcked()) {
+                    acknowledged++;
+                }
+            }
 
             // Audit the acknowledgment
             String actor = AuthUtil.getActorIdentity(req, context);
             String auditProfile = AuditUtil.getAuditProfileForRequest(req, context);
             AuditUtil.audit(context, auditProfile, "Alarm Acknowledge",
                     uuids.toString(),
-                    "acknowledged " + acknowledged.size(),
+                    "acknowledged " + acknowledged + " of " + requested.size(),
                     actor, req);
 
             JsonObject result = new JsonObject();
-            result.addProperty("acknowledged", acknowledged.size());
+            result.addProperty("acknowledged", acknowledged);
+            result.addProperty("requested", requested.size());
             return result;
         } catch (AuthUtil.BadRequestException e) {
             throw e;

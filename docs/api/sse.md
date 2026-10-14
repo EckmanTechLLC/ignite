@@ -24,7 +24,7 @@ Duplicates across entries are removed.
 
 ## Events
 
-- Initial snapshot: one `tagChange` per subscribed tag, immediately after connect.
+- Initial snapshot: one `tagChange` per subscribed tag, immediately after connect. The snapshot is authoritative: the subscription's own initial callback is suppressed, so after `subscribed` there is no duplicate of the snapshot (a genuine change, with a newer timestamp or different value, is always delivered).
 - `data: {"type":"tagChange","path":"...","value":...,"quality":"Good","timestamp":"..."}`
 - `event: subscribed` / `data: {"type":"subscribed","count":N}` : sent once, after the snapshot.
 - `data: {"type":"alarm", ...}` : alarm events when requested.

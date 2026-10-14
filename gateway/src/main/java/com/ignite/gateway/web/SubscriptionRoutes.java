@@ -56,7 +56,8 @@ import java.util.concurrent.atomic.AtomicLong;
  *   apiKey  — API key for auth (or use X-Ignite-Key header)
  *
  * Server event format:
- *   Initial snapshot: one tagChange per subscribed tag with its current value, right after connect.
+ *   Initial snapshot: one tagChange per subscribed tag with its current value, right after connect
+ *                     (the subscription's own initial callback is suppressed: no duplicate).
  *   Tag change:  data: {"type":"tagChange","path":"...","value":...,"quality":"Good","timestamp":"..."}
  *   Alarm:       data: {"type":"alarm","source":"...","displayPath":"...","name":"...",
  *                        "state":"Active|Cleared|Acknowledged","priority":"...","timestamp":"..."}
@@ -293,12 +294,32 @@ public final class SubscriptionRoutes {
         res.setHeader("Connection", "keep-alive");
 
         // --- tag listeners ---
+        // the snapshot is authoritative: it is read before subscribing, and the subscription's
+        // initial callback (a repeat of it) is dropped by SnapshotDedupe
+        SnapshotDedupe dedupe = new SnapshotDedupe();
+        List<QualifiedValue> snapshotValues = null;
+        if (!tagPaths.isEmpty()) {
+            try {
+                snapshotValues = tagManager.readAsync(tagPaths).get(TAG_TIMEOUT_SEC, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                log.warn("Error reading initial snapshot for SSE connection: " + e.getMessage(), e);
+            }
+            if (snapshotValues != null) {
+                for (int i = 0; i < tagPaths.size() && i < snapshotValues.size(); i++) {
+                    dedupe.record(tagPaths.get(i).toString(), snapshotValues.get(i));
+                }
+            }
+        }
+
         List<TagChangeListener> tagListeners = new ArrayList<>(tagPaths.size());
         for (TagPath tp : tagPaths) {
             final String pathStr = tp.toString();
             tagListeners.add(new TagChangeListener() {
                 @Override
                 public void tagChanged(TagChangeEvent event) {
+                    if (dedupe.shouldDrop(pathStr, event.getValue())) {
+                        return;
+                    }
                     conn.enqueue(tagChangeEvent(pathStr, event.getValue()));
                 }
             });
@@ -332,21 +353,13 @@ public final class SubscriptionRoutes {
             }
 
             // --- initial snapshot (written directly: may exceed the queue capacity) ---
-            if (!tagPaths.isEmpty()) {
-                List<QualifiedValue> values = null;
-                try {
-                    values = tagManager.readAsync(tagPaths).get(TAG_TIMEOUT_SEC, TimeUnit.SECONDS);
-                } catch (Exception e) {
-                    log.warn("Error reading initial snapshot for SSE connection: " + e.getMessage(), e);
+            if (snapshotValues != null) {
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < tagPaths.size() && i < snapshotValues.size(); i++) {
+                    sb.append(tagChangeEvent(tagPaths.get(i).toString(), snapshotValues.get(i)));
                 }
-                if (values != null) {
-                    StringBuilder sb = new StringBuilder();
-                    for (int i = 0; i < tagPaths.size() && i < values.size(); i++) {
-                        sb.append(tagChangeEvent(tagPaths.get(i).toString(), values.get(i)));
-                    }
-                    if (sb.length() > 0 && !send(writer, sb.toString())) {
-                        return;
-                    }
+                if (sb.length() > 0 && !send(writer, sb.toString())) {
+                    return;
                 }
             }
             if (!send(writer, "event: subscribed\ndata: {\"type\":\"subscribed\",\"count\":"

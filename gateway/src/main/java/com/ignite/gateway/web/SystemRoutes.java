@@ -1,7 +1,10 @@
 package com.ignite.gateway.web;
 
 import com.inductiveautomation.ignition.common.gson.JsonArray;
+import com.inductiveautomation.ignition.common.gson.JsonNull;
 import com.inductiveautomation.ignition.common.gson.JsonObject;
+import com.inductiveautomation.ignition.common.licensing.LicenseMode;
+import com.inductiveautomation.ignition.common.licensing.LicenseState;
 import com.inductiveautomation.ignition.common.modules.ModuleInfo;
 import com.inductiveautomation.ignition.common.util.LoggerEx;
 import com.inductiveautomation.ignition.gateway.dataroutes.AccessControlStrategy;
@@ -13,6 +16,7 @@ import jakarta.servlet.http.HttpServletResponse;
 
 import java.lang.management.ManagementFactory;
 import java.lang.management.RuntimeMXBean;
+import java.util.Date;
 import java.util.List;
 import java.util.TimeZone;
 
@@ -20,6 +24,7 @@ import java.util.TimeZone;
  * REST route handlers for Ignition gateway system information.
  *
  * Routes are mounted under the module's route group (alias "ignite"):
+ *   GET /system/status — gateway name, uptime, platform licence/trial state (read tier)
  *   GET /system/info — gateway name, uptime, JVM info, module count, timezone
  *
  * Auth: requires a user identity (session or Bearer) holding the gateway admin
@@ -58,6 +63,14 @@ public final class SystemRoutes {
 
     public static void mountRoutes(RouteGroup routes, GatewayContext context) {
 
+        // GET /system/status
+        routes.newRoute("/system/status")
+                .method(HttpMethod.GET)
+                .type(RouteGroup.TYPE_JSON)
+                .handler((req, res) -> guarded(req, res, () -> getSystemStatus(req, res, context)))
+                .accessControl(AccessControlStrategy.OPEN_ROUTE)
+                .mount();
+
         // GET /system/info
         routes.newRoute("/system/info")
                 .method(HttpMethod.GET)
@@ -70,6 +83,54 @@ public final class SystemRoutes {
     // -------------------------------------------------------------------------
     // Handler
     // -------------------------------------------------------------------------
+
+    /**
+     * Return gateway status for UIs: name, uptime and the platform licence state. The platform
+     * trial gates the historian and alarm journal, so the platform state is the representative one.
+     * Read tier: any authenticated caller (session, Bearer or API key) with a resolved site.
+     */
+    private static Object getSystemStatus(RequestContext req, HttpServletResponse res,
+                                          GatewayContext context) {
+        if (!AuthUtil.isAuthorized(req, context)) {
+            res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return AuthUtil.errorJson("Unauthorized");
+        }
+        if (AuthUtil.requireSite(req, context) == null) {
+            res.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return AuthUtil.errorJson("site required: send X-Ignite-Site or an API key");
+        }
+
+        JsonObject status = new JsonObject();
+        try {
+            status.addProperty("gatewayName", context.getSystemPropertiesManager().getSystemName());
+        } catch (Exception e) {
+            log.warn("Could not retrieve gateway name", e);
+            status.addProperty("gatewayName", "unknown");
+        }
+        status.addProperty("uptimeMs", ManagementFactory.getRuntimeMXBean().getUptime());
+
+        JsonObject license = new JsonObject();
+        try {
+            LicenseState state = context.getLicenseManager().getPlatformLicenseState();
+            LicenseMode mode = state.getLicenseMode();
+            boolean expired = state.isTrialExpired();
+            license.addProperty("mode", mode != null ? mode.name() : "Unknown");
+            license.addProperty("trialExpired", expired);
+            Date exp = state.getTrialExpirationDate();
+            if (mode == LicenseMode.Trial && exp != null) {
+                license.addProperty("trialTimeLeftMs", Math.max(0L, exp.getTime() - System.currentTimeMillis()));
+            } else {
+                license.add("trialTimeLeftMs", JsonNull.INSTANCE);
+            }
+        } catch (Exception e) {
+            log.warn("Could not retrieve licence state", e);
+            license.addProperty("mode", "Unknown");
+            license.addProperty("trialExpired", false);
+            license.add("trialTimeLeftMs", JsonNull.INSTANCE);
+        }
+        status.add("license", license);
+        return status;
+    }
 
     /**
      * Return gateway metadata: name, uptime, JVM, OS, timezone, active modules.
