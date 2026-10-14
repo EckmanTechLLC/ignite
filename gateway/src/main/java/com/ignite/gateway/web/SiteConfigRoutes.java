@@ -187,9 +187,10 @@ public final class SiteConfigRoutes {
         }
         db.notifyRecordAdded(site);
 
-        // Start polling for the new site if it is enabled
-        if (site.isEnabled() && syncService != null) {
-            syncService.scheduleSite(site);
+        // Start polling for the new site if it is enabled (idempotent: the record listener
+        // fired by notifyRecordAdded may already have scheduled it)
+        if (syncService != null) {
+            syncService.reschedule(site);
         }
 
         // Audit the site creation
@@ -263,11 +264,7 @@ public final class SiteConfigRoutes {
 
         // Re-schedule or cancel based on new enabled state
         if (syncService != null) {
-            if (site.isEnabled()) {
-                syncService.scheduleSite(site);
-            } else {
-                syncService.cancelSite(site.getId());
-            }
+            syncService.reschedule(site);
         }
 
         // Audit the site update
@@ -307,9 +304,9 @@ public final class SiteConfigRoutes {
         site.deleteRecord();
         db.save(site);
 
-        // Stop polling for the deleted site
+        // Stop polling, drop the status entry and remove the synced directory
         if (syncService != null) {
-            syncService.cancelSite(id);
+            syncService.removeSite(id, name);
         }
 
         // Audit the site deletion (capture before deleteRecord loses state)
@@ -377,15 +374,16 @@ public final class SiteConfigRoutes {
             return AuthUtil.errorJson("admin access required");
         }
 
-        if (syncService != null) {
-            syncService.triggerSync(id);
-        }
+        String notQueued = syncService != null ? syncService.triggerSync(id) : "sync service unavailable";
 
         AuditUtil.audit(context, AuditUtil.resolveProfile(context, site), "Site Sync",
                 site.getName(), "triggered", AuthUtil.getActorIdentity(req, context), req);
 
         JsonObject result = new JsonObject();
-        result.addProperty("queued", true);
+        result.addProperty("queued", notQueued == null);
+        if (notQueued != null) {
+            result.addProperty("reason", notQueued);
+        }
         result.addProperty("id", id);
         return result;
     }

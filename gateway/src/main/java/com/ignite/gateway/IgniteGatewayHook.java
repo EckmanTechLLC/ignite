@@ -24,8 +24,10 @@ import com.inductiveautomation.ignition.common.licensing.LicenseState;
 import com.inductiveautomation.ignition.common.util.LoggerEx;
 import com.inductiveautomation.ignition.gateway.dataroutes.PermissionType;
 import com.inductiveautomation.ignition.gateway.dataroutes.RouteGroup;
+import com.inductiveautomation.ignition.gateway.localdb.persistence.IRecordListener;
 import com.inductiveautomation.ignition.gateway.model.AbstractGatewayModuleHook;
 import com.inductiveautomation.ignition.gateway.model.GatewayContext;
+import com.inductiveautomation.ignition.gateway.web.models.KeyValue;
 import com.inductiveautomation.ignition.gateway.web.nav.ReactComponentInfo;
 import com.inductiveautomation.ignition.gateway.web.systemjs.SystemJsModule;
 
@@ -47,6 +49,7 @@ public class IgniteGatewayHook extends AbstractGatewayModuleHook {
     private GitSyncService syncService;
     private ScriptExecutor scriptExecutor;
     private SessionStore sessionStore;
+    private IRecordListener<SiteRecord> siteListener;
 
     @Override
     public void setup(GatewayContext context) {
@@ -117,13 +120,50 @@ public class IgniteGatewayHook extends AbstractGatewayModuleHook {
     public void startup(LicenseState activationState) {
         log.info("Ignite module starting up on Gateway.");
         syncService.start();
+
+        // Saves from the gateway config UI go through the record listener, not REST:
+        // keep polling in step with enable/disable, interval, repo and PAT changes.
+        siteListener = new IRecordListener<SiteRecord>() {
+            @Override
+            public void recordUpdated(SiteRecord record) {
+                rescheduleQuietly(record);
+            }
+
+            @Override
+            public void recordAdded(SiteRecord record) {
+                rescheduleQuietly(record);
+            }
+
+            @Override
+            public void recordDeleted(KeyValue key) {
+                try {
+                    Long id = key.getAsLong();
+                    if (id != null) syncService.removeSite(id, null);
+                } catch (Exception e) {
+                    log.warn("Site delete cleanup failed: " + e.getMessage());
+                }
+            }
+        };
+        SiteRecord.META.addRecordListener(siteListener);
         sessionStore.start(context.getScheduledExecutorService(), AuthRoutes::cleanupTick);
+    }
+
+    private void rescheduleQuietly(SiteRecord record) {
+        try {
+            if (syncService != null) syncService.reschedule(record);
+        } catch (Exception e) {
+            log.warn("Site reschedule failed: " + e.getMessage());
+        }
     }
 
     @Override
     public void shutdown() {
         log.info("Ignite module shutting down on Gateway.");
         SubscriptionRoutes.shutdownAll();
+        if (siteListener != null) {
+            SiteRecord.META.removeRecordListener(siteListener);
+            siteListener = null;
+        }
         if (syncService != null) {
             syncService.stop();
         }

@@ -225,7 +225,11 @@ public final class StaticFileRoutes {
                                    File file, SiteRecord site) throws IOException {
         String mimeType   = getMimeType(file.getName());
         boolean isHtml    = file.getName().endsWith(".html") || file.getName().endsWith(".htm");
-        String etag       = "\"" + file.lastModified() + "-" + file.length() + "\"";
+        // HTML gets the site env injected, so its ETag must change when the env does
+        String envJson    = isHtml ? escapeJsonForScript(buildEnvJson(site, req).toString()) : null;
+        String etag       = isHtml
+                ? "\"" + file.lastModified() + "-" + file.length() + "-" + envHash(envJson) + "\""
+                : "\"" + file.lastModified() + "-" + file.length() + "\"";
 
         // ETag: return 304 Not Modified if content unchanged
         String ifNoneMatch = req.getRequest().getHeader("If-None-Match");
@@ -252,7 +256,7 @@ public final class StaticFileRoutes {
             // Inject env vars and serve as text
             byte[] raw     = Files.readAllBytes(file.toPath());
             String html    = new String(raw, StandardCharsets.UTF_8);
-            String injected = injectEnvScript(html, site, req);
+            String injected = injectEnvScript(html, envJson);
             byte[] out     = injected.getBytes(StandardCharsets.UTF_8);
             res.setContentLength(out.length);
             res.getOutputStream().write(out);
@@ -336,9 +340,33 @@ public final class StaticFileRoutes {
     // Env injection
     // -------------------------------------------------------------------------
 
-    private static String injectEnvScript(String html, SiteRecord site, RequestContext req) {
-        JsonObject env = buildEnvJson(site, req);
-        String script  = "<script>window.__IGNITE_ENV__ = " + env.toString() + ";</script>";
+    /**
+     * Escapes JSON for embedding in an inline script: {@code <}, {@code >}, {@code &}, and
+     * U+2028/2029 become unicode escapes (valid inside JSON strings, the only place they occur).
+     */
+    static String escapeJsonForScript(String json) {
+        StringBuilder sb = new StringBuilder(json.length() + 16);
+        for (int i = 0; i < json.length(); i++) {
+            char c = json.charAt(i);
+            switch (c) {
+                case '<':      sb.append("\\u003c"); break;
+                case '>':      sb.append("\\u003e"); break;
+                case '&':      sb.append("\\u0026"); break;
+                case '\u2028': sb.append("\\u2028"); break;
+                case '\u2029': sb.append("\\u2029"); break;
+                default:       sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+    /** Short stable hash of the injected env JSON, for the HTML ETag. */
+    static String envHash(String envJson) {
+        return Integer.toHexString(envJson.hashCode());
+    }
+
+    private static String injectEnvScript(String html, String envJson) {
+        String script  = "<script>window.__IGNITE_ENV__ = " + envJson + ";</script>";
 
         // Prefer injecting just before </head>
         int headClose = html.indexOf("</head>");
