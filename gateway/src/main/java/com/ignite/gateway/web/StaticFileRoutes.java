@@ -308,31 +308,16 @@ public final class StaticFileRoutes {
 
         applyCors(req, res, corsOrigins);
         res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-        res.setHeader("Access-Control-Allow-Headers",
-                "Content-Type, Authorization, X-Ignite-API-Key");
+        res.setHeader("Access-Control-Allow-Headers", CorsUtil.ALLOW_HEADERS);
         res.setHeader("Access-Control-Max-Age", "86400");
         res.setStatus(HttpServletResponse.SC_NO_CONTENT);
     }
 
     private static void applyCors(RequestContext req, HttpServletResponse res,
                                    String corsOrigins) {
-        if (corsOrigins == null || corsOrigins.isBlank()) return;
-
-        String requestOrigin = req.getRequest().getHeader("Origin");
-        if (requestOrigin == null) return;
-
-        String trimmed = corsOrigins.trim();
-        if ("*".equals(trimmed)) {
-            res.setHeader("Access-Control-Allow-Origin", "*");
-            return;
-        }
-
-        for (String allowed : trimmed.split(",")) {
-            if (requestOrigin.equalsIgnoreCase(allowed.trim())) {
-                res.setHeader("Access-Control-Allow-Origin", requestOrigin);
-                res.addHeader("Vary", "Origin");
-                return;
-            }
+        String allow = CorsUtil.matchOrigin(req.getRequest().getHeader("Origin"), corsOrigins);
+        if (allow != null) {
+            CorsUtil.applyOrigin(res, allow);
         }
     }
 

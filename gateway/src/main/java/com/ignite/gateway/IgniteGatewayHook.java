@@ -1,6 +1,5 @@
 package com.ignite.gateway;
 
-import com.ignite.common.IgniteModule;
 import com.ignite.gateway.records.IgniteSettingsRecord;
 import com.ignite.gateway.records.SiteRecord;
 import com.ignite.gateway.sync.GitSyncService;
@@ -8,6 +7,7 @@ import com.ignite.gateway.web.AlarmRoutes;
 import com.ignite.gateway.web.AuditRoutes;
 import com.ignite.gateway.web.AuthRoutes;
 import com.ignite.gateway.web.AuthUtil;
+import com.ignite.gateway.web.CorsRouteGroup;
 import com.ignite.gateway.web.DbRoutes;
 import com.ignite.gateway.web.LaunchRoutes;
 import com.ignite.gateway.web.ScriptRoutes;
@@ -15,7 +15,6 @@ import com.ignite.gateway.web.SettingsRoutes;
 import com.ignite.gateway.web.SessionStore;
 import com.ignite.gateway.web.SiteConfigRoutes;
 import com.ignite.gateway.web.StaticFileRoutes;
-import com.ignite.gateway.web.StaticFileServlet;
 import com.ignite.gateway.web.SubscriptionRoutes;
 import com.ignite.gateway.web.SystemRoutes;
 import com.ignite.gateway.web.TagRoutes;
@@ -181,20 +180,22 @@ public class IgniteGatewayHook extends AbstractGatewayModuleHook {
     @Override
     public void mountRouteHandlers(RouteGroup routes) {
         log.info("Mounting Ignite REST routes.");
-        AuthRoutes.mountRoutes(routes, context, sessionStore);
-        SiteConfigRoutes.mountRoutes(routes, context, syncService);
-        SettingsRoutes.mountRoutes(routes, context);
-        LaunchRoutes.mountRoutes(routes, context, syncService);
-        TagRoutes.mountRoutes(routes, context);
-        DbRoutes.mountRoutes(routes, context);
-        AlarmRoutes.mountRoutes(routes, context);
-        SystemRoutes.mountRoutes(routes, context);
-        SubscriptionRoutes.mountRoutes(routes, context);
-        // Env endpoint only (/sites/:name/env). Static files are served via
-        // StaticFileServlet registered at /ignite-sites/* (see setup()).
+        // API routes go through the CORS decorator (handler headers + per-path OPTIONS preflight);
+        // static-file routes handle their own CORS and OPTIONS routes, so they get the raw group.
+        RouteGroup api = new CorsRouteGroup(routes, context);
+        AuthRoutes.mountRoutes(api, context, sessionStore);
+        SiteConfigRoutes.mountRoutes(api, context, syncService);
+        SettingsRoutes.mountRoutes(api, context);
+        LaunchRoutes.mountRoutes(api, context, syncService);
+        TagRoutes.mountRoutes(api, context);
+        DbRoutes.mountRoutes(api, context);
+        AlarmRoutes.mountRoutes(api, context);
+        SystemRoutes.mountRoutes(api, context);
+        SubscriptionRoutes.mountRoutes(api, context);
+        // Static files and the env endpoint (/sites/:name/env, /s/:mount/...) with their own CORS
         StaticFileRoutes.mountRoutes(routes, context);
-        ScriptRoutes.mountRoutes(routes, context, scriptExecutor);
-        AuditRoutes.mountRoutes(routes, context, scriptExecutor);
+        ScriptRoutes.mountRoutes(api, context, scriptExecutor);
+        AuditRoutes.mountRoutes(api, context, scriptExecutor);
     }
 
     @Override

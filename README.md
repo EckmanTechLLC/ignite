@@ -11,10 +11,9 @@ Ignite is an Ignition 8.3 gateway module that turns the gateway into a host for 
 
 ## Repository layout
 
-- `common/` - shared code used by the gateway and designer scopes
+- `common/` - shared scope (GD) reserved for code used by both gateway and designer; currently empty
 - `gateway/` - gateway module: routes, auth, git sync, config UI
 - `designer/` - designer scope hook
-- `web/` - placeholder subproject
 - `demo/` - React showcase app served by Ignite
 - `docs/decisions/` - architecture decision records (ADRs)
 
@@ -41,6 +40,10 @@ The module is unsigned, so the gateway must allow unsigned modules: add `-Dignit
 - Script calls require the write tier and strictly validated function paths.
 
 The full design is in [ADR-004](docs/decisions/adr-004-auth-hardening.md), building on [ADR-003](docs/decisions/adr-003-auth-audit-scripts.md).
+
+## CORS for API calls
+
+A page served from another origin can call the API when that origin is listed in the site's `corsOrigins` (comma-separated, exact match, or `*`). For a request carrying an `Origin` header, the site is resolved from the API key, `X-Ignite-Site` or the `site` query parameter; if the origin is listed, the response includes `Access-Control-Allow-Origin` (the origin echoed, plus `Vary: Origin`), and `Allow-Headers` (`Authorization, Content-Type, X-Ignite-Key, X-Ignite-Site, X-CSRF-Token`), `Allow-Methods` and `Max-Age: 600`. Every API path also answers an `OPTIONS` preflight with 204 and no auth check; the CORS headers appear only when the origin is listed on some site. Unlisted origins get no CORS headers, so the browser blocks the call. Credentials mode is not supported: send the Bearer token or API key as a header.
 
 ## Showcase
 

@@ -1,8 +1,14 @@
 # ADR-001: Ignite Module Architecture
 
-**Status:** Accepted
+**Status:** Superseded by ADR-003, ADR-004 and ADR-005
 **Date:** 2026-03-24
 
+> **Drift note (task-78).** Kept for history, not rewritten. What it said vs what exists:
+> - WebSocket/SSE real-time: only SSE (`/sse`) was built; there is no WebSocket endpoint.
+> - API under `/api/ignite`: routes are mounted at `/data/ignite/*` via the module route group.
+> - "No custom auth layer": there is one (ADR-003/ADR-004): Bearer sessions, per-site API keys, security-level tiers.
+> - OPC-UA browsing/reads: not implemented; tag access is via the tag manager.
+> - `web/` TypeScript/Webpack build: removed; the config UI is plain JS in `gateway/src/main/resources/mounted/`.
 ## Context
 
 Ignition's core platform (tags, alarms, databases, OPC-UA, scripting, identity providers) is robust, affordable, and feature-rich. However, its UI modules (Perspective, Vision) are expensive and painful to develop with. Modern web frameworks (React, Astro, Vue, etc.) enable rapid, beautiful UI development.

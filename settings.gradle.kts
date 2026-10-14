@@ -27,4 +27,4 @@ enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 rootProject.name = "ignite"
 
-include(":common", ":gateway", ":designer", ":web")
+include(":common", ":gateway", ":designer")

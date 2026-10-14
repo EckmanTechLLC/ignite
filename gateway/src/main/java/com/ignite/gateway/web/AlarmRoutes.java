@@ -1,11 +1,14 @@
 package com.ignite.gateway.web;
 
+import com.ignite.gateway.SettingsUtil;
 import com.ignite.gateway.records.SiteRecord;
 import com.inductiveautomation.ignition.common.QualifiedPath;
+import com.inductiveautomation.ignition.common.WellKnownPathTypes;
 import com.inductiveautomation.ignition.common.alarming.AlarmEvent;
 import com.inductiveautomation.ignition.common.alarming.AlarmFilter;
 import com.inductiveautomation.ignition.common.alarming.AlarmState;
 import com.inductiveautomation.ignition.common.alarming.EventData;
+import com.inductiveautomation.ignition.common.alarming.config.CommonAlarmProperties;
 import com.inductiveautomation.ignition.common.alarming.query.AlarmQueryResult;
 import com.inductiveautomation.ignition.common.alarming.query.conditions.DateTimeCondition;
 import com.inductiveautomation.ignition.common.alarming.query.conditions.EnumCondition;
@@ -326,7 +329,9 @@ public final class AlarmRoutes {
                     }
                 }
             }
+            String actor = AuthUtil.getActorIdentity(req, context);
             EventData ackData = new EventData(System.currentTimeMillis());
+            applyAckUser(ackData, actor, context);
             context.getAlarmManager().acknowledgeBulk(uuids, ackData);
 
             // acknowledgeBulk returns only state-changed ids (empty for Cleared alarms): re-read the
@@ -340,7 +345,6 @@ public final class AlarmRoutes {
             }
 
             // Audit the acknowledgment
-            String actor = AuthUtil.getActorIdentity(req, context);
             String auditProfile = AuditUtil.getAuditProfileForRequest(req, context);
             AuditUtil.audit(context, auditProfile, "Alarm Acknowledge",
                     uuids.toString(),
@@ -356,6 +360,22 @@ public final class AlarmRoutes {
         } catch (Exception e) {
             return AuthUtil.internalError(res, log, "Error acknowledging alarms", e);
         }
+    }
+
+    /**
+     * Records who acknowledged: AckUserName is the actor string; AckUser is a qualified path
+     * (UserProfile + User) for users, or just User for "api-key:<site>" / "anonymous" actors.
+     */
+    private static void applyAckUser(EventData ackData, String actor, GatewayContext context) {
+        ackData.set(CommonAlarmProperties.AckUserName, actor);
+        QualifiedPath path = new QualifiedPath();
+        if (!actor.startsWith("api-key:") && !"anonymous".equals(actor)) {
+            String profile = SettingsUtil.get(context).getLoginAuthProfile();
+            if (profile != null && !profile.isBlank()) {
+                path = path.extend(WellKnownPathTypes.UserProfile, profile);
+            }
+        }
+        ackData.set(CommonAlarmProperties.AckUser, path.extend(WellKnownPathTypes.User, actor));
     }
 
     // -------------------------------------------------------------------------
@@ -419,6 +439,15 @@ public final class AlarmRoutes {
         EventData ackData = event.getAckData();
         if (ackData != null && ackData.getTimestamp() > 0) {
             obj.addProperty("ackTime", Instant.ofEpochMilli(ackData.getTimestamp()).toString());
+        }
+        if (ackData != null) {
+            String ackUser = ackData.get(CommonAlarmProperties.AckUserName);
+            if ((ackUser == null || ackUser.isBlank()) && ackData.get(CommonAlarmProperties.AckUser) != null) {
+                ackUser = ackData.get(CommonAlarmProperties.AckUser).getLastPathComponent();
+            }
+            if (ackUser != null && !ackUser.isBlank()) {
+                obj.addProperty("ackUser", ackUser);
+            }
         }
 
         // Clear timestamp

@@ -18,6 +18,9 @@ ignitionModule {
 
     requiredIgnitionVersion.set("8.3.0")
 
+    // MIT-licensed, unsigned: must agree with IgniteGatewayHook.isFreeModule()
+    freeModule.set(true)
+
     license.set("license.html")
 
     // No module dependencies (no Perspective)
@@ -25,7 +28,6 @@ ignitionModule {
     projectScopes.putAll(
         mapOf(
             ":gateway" to "G",
-            ":web" to "G",
             ":designer" to "D",
             ":common" to "GD"
         )
