@@ -126,6 +126,7 @@ public final class ScriptRoutes {
 
         // Parse body
         JsonObject body = AuthUtil.parseJsonObject(req);
+        SignatureUtil.Request sigReq = SignatureUtil.parse(body);
 
         // Validate required fields
         String projectName = getStringField(body, "project");
@@ -156,6 +157,11 @@ public final class ScriptRoutes {
             throw new AuthUtil.BadRequestException("args must be an array and kwargs an object");
         }
 
+        Object sigDenied = SignatureUtil.gate(req, res, context, site, sigReq);
+        if (sigDenied != null) {
+            return sigDenied;
+        }
+
         String outcome = "error";
         try {
             JsonObject result = executor.executeLibraryFunction(projectName, functionPath, args, kwargs);
@@ -177,7 +183,8 @@ public final class ScriptRoutes {
         } finally {
             String actor = AuthUtil.getActorIdentity(req, context);
             String auditProfile = AuditUtil.getAuditProfileForRequest(req, context);
-            AuditUtil.audit(context, auditProfile, "Script Library", functionPath, outcome, actor, req);
+            AuditUtil.audit(context, auditProfile, "Script Library", functionPath,
+                    SignatureUtil.actionValue(outcome, sigReq.signature, sigReq.reason), actor, req);
         }
     }
 

@@ -169,7 +169,7 @@ public final class TagRoutes {
         return result;
     }
 
-    /** Write values to one or more tag paths. Body: [{path, value}, ...] */
+    /** Write values to one or more tag paths. Body: [{path, value}, ...] or {writes, signature?, reason?} */
     private static Object writeTags(RequestContext req, HttpServletResponse res,
                                     GatewayContext context) throws Exception {
         if (!AuthUtil.isAuthorized(req, context)) {
@@ -192,9 +192,24 @@ public final class TagRoutes {
             return AuthUtil.errorJson("Request body is required");
         }
 
+        // Body: [{path, value}, ...] or {"writes": [...], "signature": {...}, "reason": "..."} (ADR-006)
         JsonArray writes;
+        SignatureUtil.Request sigReq;
         try {
-            writes = JsonParser.parseString(body).getAsJsonArray();
+            JsonElement parsedBody = JsonParser.parseString(body);
+            if (parsedBody.isJsonObject()) {
+                JsonObject wrapper = parsedBody.getAsJsonObject();
+                writes = wrapper.getAsJsonArray("writes");
+                sigReq = SignatureUtil.parse(wrapper);
+            } else {
+                writes = parsedBody.getAsJsonArray();
+                sigReq = SignatureUtil.parse(null);
+            }
+            if (writes == null) {
+                throw new IllegalStateException("writes missing");
+            }
+        } catch (AuthUtil.BadRequestException e) {
+            throw e;
         } catch (Exception e) {
             res.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             return AuthUtil.errorJson("Invalid JSON body: expected array of {path, value}");
@@ -220,7 +235,24 @@ public final class TagRoutes {
         if (denied != null) {
             return denied;
         }
+        Object sigDenied = SignatureUtil.gate(req, res, context, site, sigReq);
+        if (sigDenied != null) {
+            return sigDenied;
+        }
         GatewayTagManager tagManager = context.getTagManager();
+        List<String> oldValues = new ArrayList<>();
+        try {
+            List<QualifiedValue> before = tagManager.readAsync(tagPaths).get(TAG_TIMEOUT_SEC, TimeUnit.SECONDS);
+            for (int i = 0; i < tagPaths.size(); i++) {
+                QualifiedValue qv = before != null && i < before.size() ? before.get(i) : null;
+                oldValues.add(qv != null ? String.valueOf(qv.getValue()) : "?");
+            }
+        } catch (Exception e) {
+            oldValues.clear();
+            for (int i = 0; i < tagPaths.size(); i++) {
+                oldValues.add("?");
+            }
+        }
         List<QualityCode> results = tagManager.writeAsync(tagPaths, writeValues)
                 .get(TAG_TIMEOUT_SEC, TimeUnit.SECONDS);
 
@@ -230,7 +262,8 @@ public final class TagRoutes {
         for (int i = 0; i < tagPaths.size(); i++) {
             AuditUtil.audit(context, auditProfile, "Tag Write",
                     tagPaths.get(i).toString(),
-                    String.valueOf(writeValues.get(i)),
+                    SignatureUtil.actionValue(oldValues.get(i) + " -> " + writeValues.get(i),
+                            sigReq.signature, sigReq.reason),
                     actor, req);
         }
 

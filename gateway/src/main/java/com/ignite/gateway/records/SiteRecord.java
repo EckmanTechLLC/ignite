@@ -94,6 +94,10 @@ public class SiteRecord extends PersistentRecord {
     /** Tag allow-list patterns (one per line or comma-separated). Blank = unrestricted (ADR-004 A1). */
     public static final StringField TagPathPatterns = new StringField(META, "TagPathPatterns", 4096);
 
+    /** When true, tag writes, alarm acks and library scripts for this site must carry a valid e-signature (ADR-006). */
+    public static final BooleanField RequireSignature = new BooleanField(META, "RequireSignature")
+            .setDefault(false);
+
     // -------------------------------------------------------------------------
     // RecordMeta contract
     // -------------------------------------------------------------------------
@@ -155,6 +159,10 @@ public class SiteRecord extends PersistentRecord {
         return getBoolean(Enabled);
     }
 
+    public boolean isRequireSignature() {
+        return getBoolean(RequireSignature);
+    }
+
     // -------------------------------------------------------------------------
     // Typed setters
     // -------------------------------------------------------------------------
@@ -201,6 +209,10 @@ public class SiteRecord extends PersistentRecord {
 
     public void setEnabled(boolean value) {
         setBoolean(Enabled, value);
+    }
+
+    public void setRequireSignature(boolean value) {
+        setBoolean(RequireSignature, value);
     }
 
     public String getWriteSecurityLevel() {

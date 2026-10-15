@@ -276,6 +276,7 @@ public final class AlarmRoutes {
         }
 
         JsonObject parsed = AuthUtil.parseJsonObject(req);
+        SignatureUtil.Request sigReq = SignatureUtil.parse(parsed);
 
         // Collect UUIDs — accept "ids" array or single "id" string
         List<UUID> uuids = new ArrayList<>();
@@ -329,6 +330,10 @@ public final class AlarmRoutes {
                     }
                 }
             }
+            Object sigDenied = SignatureUtil.gate(req, res, context, site, sigReq);
+            if (sigDenied != null) {
+                return sigDenied;
+            }
             String actor = AuthUtil.getActorIdentity(req, context);
             EventData ackData = new EventData(System.currentTimeMillis());
             applyAckUser(ackData, actor, context);
@@ -348,7 +353,8 @@ public final class AlarmRoutes {
             String auditProfile = AuditUtil.getAuditProfileForRequest(req, context);
             AuditUtil.audit(context, auditProfile, "Alarm Acknowledge",
                     uuids.toString(),
-                    "acknowledged " + acknowledged + " of " + requested.size(),
+                    SignatureUtil.actionValue("acknowledged " + acknowledged + " of " + requested.size(),
+                            sigReq.signature, sigReq.reason),
                     actor, req);
 
             JsonObject result = new JsonObject();
