@@ -27,7 +27,7 @@ The module is written to `build/Ignite.unsigned.modl`. Run `zipModule` with `--r
 
 ## Install
 
-The module is unsigned, so the gateway must allow unsigned modules: add `-Dignition.allowunsignedmodules=true` to `data/ignition.conf` and restart the gateway.
+The module is unsigned, so the gateway must allow unsigned modules: add `-Dignition.allowunsignedmodules=true` to `data/ignition.conf` and restart the gateway. For anything beyond a lab, sign the modl with Inductive Automation's open-source [`module-signer`](https://github.com/inductiveautomation/module-signer) using your own certificate; a signed module removes the need for `allowunsignedmodules` (a self-signed certificate works once the gateway operator approves it on install).
 
 1. First install: upload the `.modl` in the Gateway under Config > Modules. Ignition 8.3 needs this step to register the module.
 2. Upgrades: replace the installed `.modl` file in the gateway's `user-lib/modules/` directory with the new build and restart the gateway.
@@ -70,7 +70,7 @@ Lab operation is in [docs/runbook-lab-demo.md](docs/runbook-lab-demo.md).
 
 ## Status
 
-Verified on Ignition 8.3.10 (October 2026). Early-stage: the module is unsigned and has no automated tests yet.
+Verified on Ignition 8.3.10 (October 2026). Lab-grade software, provided as is with no warranty and not a supported product. The shipped build is unsigned (see Install). Unit tests cover git sync, static file serving, tag scope, SSE snapshot de-duplication and CORS (`./gradlew test`); there is no CI yet.
 
 ## License
 
