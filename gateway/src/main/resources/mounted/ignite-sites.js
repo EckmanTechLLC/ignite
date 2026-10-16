@@ -277,7 +277,7 @@ System.register(['react'], function (_export) {
                 name: '', mountPath: '', repoUrl: '', branch: 'main',
                 pat: '', pollIntervalMinutes: 5,
                 envVars: '', corsOrigins: '', apiKey: '', servePath: '/',
-                enabled: true,
+                enabled: true, requireSignature: false,
                 writeSecurityLevel: '', adminSecurityLevel: '', auditProfileName: '',
                 tagPathPatterns: '',
             };
@@ -335,6 +335,7 @@ System.register(['react'], function (_export) {
                     apiKey: '',            // never prefill secrets
                     servePath: site.servePath || '/',
                     enabled: site.enabled !== false,
+                    requireSignature: site.requireSignature === true,
                     writeSecurityLevel: site.writeSecurityLevel || '',
                     adminSecurityLevel: site.adminSecurityLevel || '',
                     auditProfileName: site.auditProfileName || '',
@@ -513,6 +514,13 @@ System.register(['react'], function (_export) {
                                         h('input', Object.assign({ type: 'checkbox', style: { marginRight: '6px' } }, field('enabled'))),
                                         'Enabled',
                                     ),
+                                ),
+                                h('div', { style: S.formGroup },
+                                    h('label', null,
+                                        h('input', Object.assign({ type: 'checkbox', style: { marginRight: '6px' } }, field('requireSignature'))),
+                                        'Require e-signature',
+                                    ),
+                                    h('div', { style: S.hint }, 'Tag writes, alarm acks and library scripts must carry a valid signature'),
                                 ),
 
                                 // Security & Audit section

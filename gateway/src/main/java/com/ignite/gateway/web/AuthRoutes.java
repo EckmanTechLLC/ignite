@@ -58,7 +58,8 @@ public final class AuthRoutes {
     private static final LoggerEx log = LoggerEx.newBuilder()
             .build("ignite.gateway.AuthRoutes");
 
-    private static final LoginThrottle loginThrottle = new LoginThrottle();
+    /** Shared with SignatureUtil so e-signature attempts count against the same lockout (ADR-006). */
+    static final LoginThrottle loginThrottle = new LoginThrottle();
 
     private AuthRoutes() {}
 
@@ -241,21 +242,7 @@ public final class AuthRoutes {
         }
 
         // Authenticate against the configured user source
-        String profileName = settings.getLoginAuthProfile();
-        UserSourceProfile profile = context.getUserSourceManager().getProfile(profileName);
-        if (profile == null) {
-            log.error("Login auth profile not found: " + profileName);
-            return loginFailed(req, res, context, auditProfile, key, username);
-        }
-
-        AuthenticatedUser user = null;
-        try {
-            user = profile.authenticate(new BasicAuthChallenge(username, password).toSimpleAuthChallenge());
-        } catch (PasswordExpiredException e) {
-            log.info("Login rejected, password expired for user: " + username);
-        } catch (Exception e) {
-            log.debug("Authentication failed for user '" + username + "': " + e.getMessage());
-        }
+        AuthenticatedUser user = authenticateUser(context, settings, username, password);
         if (user == null) {
             return loginFailed(req, res, context, auditProfile, key, username);
         }
@@ -278,6 +265,28 @@ public final class AuthRoutes {
         result.add("roles", rolesArr);
         result.addProperty("expiresIn", 28800);
         return result;
+    }
+
+    /**
+     * Verifies a credential against the login user source (settings login auth profile).
+     * Returns the authenticated user, or null on any failure. Never logs the password.
+     */
+    static AuthenticatedUser authenticateUser(GatewayContext context, IgniteSettingsRecord settings,
+                                              String username, String password) {
+        String profileName = settings.getLoginAuthProfile();
+        UserSourceProfile profile = context.getUserSourceManager().getProfile(profileName);
+        if (profile == null) {
+            log.error("Login auth profile not found: " + profileName);
+            return null;
+        }
+        try {
+            return profile.authenticate(new BasicAuthChallenge(username, password).toSimpleAuthChallenge());
+        } catch (PasswordExpiredException e) {
+            log.info("Login rejected, password expired for user: " + username);
+        } catch (Exception e) {
+            log.debug("Authentication failed for user '" + username + "': " + e.getMessage());
+        }
+        return null;
     }
 
     /** Records a failure, audits it, and returns the generic 401. */

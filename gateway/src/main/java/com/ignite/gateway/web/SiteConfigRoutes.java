@@ -461,6 +461,7 @@ public final class SiteConfigRoutes {
         obj.addProperty("adminSecurityLevel", site.getAdminSecurityLevel());
         obj.addProperty("auditProfileName", site.getAuditProfileName());
         obj.addProperty("tagPathPatterns", site.getTagPathPatterns());
+        obj.addProperty("requireSignature", site.isRequireSignature());
         if (syncService != null && site.getId() != null) {
             obj.add("sync", syncService.getStatus(site.getId()).toJson());
         }
@@ -505,6 +506,7 @@ public final class SiteConfigRoutes {
             changed.add("servePath");
         }
         if (data.has("enabled")) { site.setEnabled(data.get("enabled").getAsBoolean()); changed.add("enabled"); }
+        if (data.has("requireSignature")) { site.setRequireSignature(data.get("requireSignature").getAsBoolean()); changed.add("requireSignature"); }
         if (data.has("writeSecurityLevel")) { site.setWriteSecurityLevel(data.get("writeSecurityLevel").getAsString()); changed.add("writeSecurityLevel"); }
         if (data.has("adminSecurityLevel")) { site.setAdminSecurityLevel(data.get("adminSecurityLevel").getAsString()); changed.add("adminSecurityLevel"); }
         if (data.has("auditProfileName")) { site.setAuditProfileName(data.get("auditProfileName").getAsString()); changed.add("auditProfileName"); }

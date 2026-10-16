@@ -38,6 +38,7 @@ The module is unsigned, so the gateway must allow unsigned modules: add `-Dignit
 - Write and admin operations require a user identity, either an Ignition web session or a Bearer session from `POST /auth/login`, with the required security level.
 - Arbitrary SQL is not supported; database access is through named queries only.
 - Script calls require the write tier and strictly validated function paths.
+- Tag writes, alarm acknowledgements and library scripts accept an optional electronic signature and reason (21 CFR Part 11 style); a site with `requireSignature` refuses unsigned changes. See [docs/api/signatures.md](docs/api/signatures.md) and [ADR-006](docs/decisions/adr-006-electronic-signatures.md).
 
 The full design is in [ADR-004](docs/decisions/adr-004-auth-hardening.md), building on [ADR-003](docs/decisions/adr-003-auth-audit-scripts.md).
 
@@ -61,8 +62,9 @@ Route families they exercise:
 - `GET /sse` - one folder subscription per page (111 / 675 / 405 / 908 tags; the brewery model has 1 039 tags, so it subscribes with 12 folder patterns because one subscription is capped at 1 000), with an initial snapshot.
 - `GET /system/status` - gateway name, uptime and platform trial state (see [docs/api/system.md](docs/api/system.md)).
 - `GET /tags/history` - trend charts and the trial/historian health probe.
-- `GET /alarms/status`, `POST /alarms/acknowledge` - alarm boards, acknowledge tier-gated.
-- `POST /script/library` - scenario, speed and fault controls through project library functions.
+- `GET /alarms/status`, `POST /alarms/acknowledge` - alarm boards, acknowledge tier-gated, optionally signed.
+- `POST /script/library` - scenario, speed and fault controls through project library functions, optionally signed.
+- `POST /tags/write` - operator writes, optionally signed with a reason (audited as `old -> new`).
 - `POST /auth/login`, `GET /auth/session`, `POST /auth/logout` - viewer, operator and administrator tiers.
 - `GET /audit/logs` - audit view for administrators.
 
@@ -70,7 +72,7 @@ Lab operation is in [docs/runbook-lab-demo.md](docs/runbook-lab-demo.md).
 
 ## Status
 
-Verified on Ignition 8.3.10 (October 2026). Lab-grade software, provided as is with no warranty and not a supported product. The shipped build is unsigned (see Install). Unit tests cover git sync, static file serving, tag scope, SSE snapshot de-duplication and CORS (`./gradlew test`); there is no CI yet.
+Verified on Ignition 8.3.10 (October 2026). Lab-grade software, provided as is with no warranty and not a supported product. The shipped build is unsigned (see Install). Unit tests cover git sync, static file serving, tag scope, SSE snapshot de-duplication, CORS and e-signature parsing (`./gradlew test`); there is no CI yet.
 
 ## License
 
