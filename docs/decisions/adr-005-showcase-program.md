@@ -254,11 +254,12 @@ Opened as `/s/cleanroom-kiosk/?station=N`; reads `CR/Stations/N/AllowedRooms` an
 ### Tasks
 | Task | Scope | Depends on |
 |---|---|---|
-| task-88-cr-sim | `sim/cleanroom/` Jython sim, tag model, alarms, history, `cr` library; verified on the lab | — |
-| task-89-esig-module | ADR-006; `RequireSignature`; signature verification + reason in audit on write/ack/library; tests; build + deploy | — |
-| task-90-cr-scaffold | `cleanroom/` (Angular) and `cleanroom-kiosk/` (Lit) workspaces; `@ignite/client` signature options and per-page subscription helper; site records; first deploy | 88, 89 |
-| task-91-cr-hero | Three.js suite scene: plan/cutaway cameras, airflow, doors, states, filters, hover/select | 90 |
-| task-92-cr-hero-detail | detail pass (modelled FFUs, pass-throughs, equipment, gowning benches, LAF hood, pipework, signage) | 91 |
-| task-93-cr-pages | rooms, trends, alarms, journal, audit, control (signature dialog), stations, identity | 90 |
-| task-94-cr-kiosk | Lit kiosk | 90 |
-| task-95-cr-ship | close-out: smoke matrix (both sites, signature paths), perf/a11y, screenshots, docs | 92, 93, 94 |
+| task-88-cr-sim | `sim/cleanroom/` Jython sim, tag model, alarms, history, `cr` library; verified on the lab (complete; private repo) | — |
+| task-89-esig-module | ADR-006; `RequireSignature`; signature verification + reason in audit on write/ack/library; tests; build (complete) | — |
+| task-90-esig-deploy | deploy the e-signature build to the lab; curl verification of the signature contract and regressions | 89 |
+| task-91-cr-scaffold | private repo layout (showcase submodule for `@ignite/client`/`@ignite/theme`), client signature options (public), Angular shell with routes, Lit kiosk shell, deploy pipeline, sites enabled | 88, 90 |
+| task-92-cr-hero | Three.js suite scene: plan/cutaway cameras, airflow, doors, states, filters, hover/select | 91 |
+| task-93-cr-hero-detail | detail pass (modelled FFUs, pass-throughs, equipment, gowning benches, LAF hood, pipework, signage) | 92 |
+| task-94-cr-pages | rooms, trends, alarms, journal, audit, control (signature dialog), stations, identity | 91 |
+| task-95-cr-kiosk | Lit kiosk | 91 |
+| task-96-cr-ship | close-out: smoke matrix (both sites, signature paths), perf/a11y, screenshots, docs | 93, 94, 95 |
