@@ -211,3 +211,54 @@ Site `brewery` (servePath `brewery`, `TagPathPatterns` = `[default]BR/**`, same 
 | task-82-mg-campus | PixiJS campus scene replacing `microgrid/src/diagram` + HUD reframing; overlays rewired; deploy (complete) | 67, 68 |
 | task-85-mg-campus-detail | oblique 2.5D detail pass on the campus (modelled facades, racking, containers, enclosure, canopy, substation yard, kerbed roads, pond) (complete) | 82 |
 | task-83-mg-ship | close-out as above (complete) | 82, 85 |
+
+## Amendment A4 — Demo 5: GMP Cleanroom Suite (2026-10-15, Accepted)
+
+**Why now:** an integrator asked to see a cleanroom build on Ignite. It is also the first demo with **several pages** (router, deep links, per-page subscriptions), a **second site on the same model** (read-only touchscreen kiosks), and **21 CFR Part 11 behaviour** (electronic signatures on every change, with reason, visible in the audit log). The equipment model follows a real Ignition cleanroom BMS (FFU/HEPA units, differential pressure, temperature/humidity, dampers, duct heaters, dehumidifiers, exhaust fans, door feedback, maglocks, status lights, ACH) with particle counters and room status added, on an invented suite so nothing site-specific is published.
+
+### Stack
+`cleanroom/` — **Angular 22 + TypeScript (strict)**, Angular router (the module's SPA fallback already serves `index.html` for extension-less paths), hero in **three 0.186** (vanilla, owned by one Angular service so the scene survives route changes), ECharts (lazy) for trends. Built with Angular's application builder; output flattened to `dist/index.html` so `deploy.mjs` needs no change; base href resolved at runtime from the served path. `cleanroom-kiosk/` — **Lit 3 + Vite + TypeScript**, no router, one screen; the sixth framework and the lightest. Both use `@ignite/client`.
+
+### Pages (control room)
+- **Overview (hero).** One Three.js scene of the suite with two cameras: **Plan** (orthographic top-down, roofs off, flat architectural styling) and **Cutaway** (isometric, walls cut at 2 m, FFU ceiling grid visible); key `V` toggles, `R` resets, drag/wheel orbit and zoom. Airflow particles: emitted at each FFU in proportion to CFM, down through the room, out through door gaps and leakage toward the lower-pressure neighbour; a stalled FFU starves its room, an open door shows the cascade collapsing through it, a reversed cascade shows particles flowing the wrong way. Doors swing open/closed with `Door Feedback`; maglock state and status lights on the frames; room fill colour by state (Released / In Use / Cleaning / Out of Spec) and alarm. Filters: Entire / Positive / Negative pressure, Analog / Digital / Pressure overlays (as the Prism overview). Hover tooltip; click → room page, where the same scene flies the camera into the room.
+- **Rooms/:id** — 3D of the room plus equipment cards (FFUs with CFM SP/feedback/RPM/on-board pressure, DP sensors, T/RH, damper, duct heater, dehumidifier, exhaust fan, door/maglock, lights, particle counter 0.5/5 µm with ISO class achieved vs designed), ACH, occupancy, status; trends for the room; controls (signed).
+- **Trends** — tag picker (rooms × signals), ranges, history via `/tags/history`.
+- **Alarms** — active board, ack with signature. **Alarm journal** — `/alarms/history` (needs a journal on the lab; see Deployment).
+- **Audit log** — `/audit/logs` with actor/action/time filters, showing actor, action, target, old → new, reason, signature meaning.
+- **Control** — setpoints (room T/RH/DP, FFU CFM, damper) and AHU/FFU start/stop; every change opens the signature dialog.
+- **Stations** — kiosk station → allowed rooms (admin). **Login/identity** overlay as in the other demos; no auto-logout (not requested).
+
+### Kiosk (`cleanroom-kiosk/`)
+Opened as `/s/cleanroom-kiosk/?station=N`; reads `CR/Stations/N/AllowedRooms` and shows a carousel of room cards (auto-advance, swipe, tap to pin): room name/number, ISO class, status, **entry banner** (ENTER OK / DO NOT ENTER: cascade not held, active alarm, room not released, airlock in use), DP/T/RH/ACH/particles in large type, door and maglock state, FFU count running, gowning reminder for the class. Read-only: site key only, no login, no controls, reconnect banner, high-contrast dark theme sized for 1080p touch panels.
+
+### Part 11: electronic signatures (module + client)
+- **Module (ADR-006, written in its task):** `POST /tags/write`, `POST /alarms/acknowledge` and `POST /script/library` accept an optional `signature: {"username","password","meaning"}` and `reason` (≤ 200 chars). The module verifies the credential against the login user source, requires the signature username to equal the Bearer actor, and audits each action with the action value `old → new | <meaning>: <reason>` (tag writes read the previous value first; acks and library calls record the target and reason). New `SiteRecord.RequireSignature` (boolean, default false): when set, those routes return 403 `{"error":"signature required"}` without a valid signature. Lockout rules apply to signature attempts. Tests for the verifier and audit formatting.
+- **Client:** `@ignite/client` write/ack/library calls take `{signature, reason}`; the app's signature dialog (meaning from a fixed list, reason text, password) wraps every control.
+
+### Simulation (`sim/cleanroom/`, tags under `[default]CR/`)
+- **Suite (15 rooms, invented):** 101 Entry (CNC, 0 Pa), 102 Gowning (ISO 8, +7.5), 103 Personnel Airlock (ISO 8, +15, interlocked), 104 Clean Corridor (ISO 8, +15), 105 Weigh & Dispense (ISO 7, +30), 106 Compounding (ISO 7, **−15**, potent, sink), 107 Compounding Anteroom (bubble airlock, +30), 108 Filling (ISO 7, +30) with LAF fill zone (ISO 5, +45), 109 Capping (ISO 7, +30), 110 Lyophiliser (ISO 7, +30), 111 Component Prep/Wash (ISO 8, +15), 112 Material Airlock (ISO 8, +15, interlocked), 113 Staging (ISO 8, +15), 114 De-gowning (ISO 8, +7.5), 115 QC Micro Lab (ISO 8, +15). AHU-1 serves the ISO 7/5 rooms, AHU-2 the ISO 8 and support rooms (supply/return fan %, supply temperature, CHW valve, pre-filter and final-filter dP, status, fault).
+- **Per room:** `HF_n` (1–8 FFUs: `Setpoint`, `CFMFeedback`, `RPMFeedback`, `OnBoardPressure`, `Enable`, `Start`, `RunFeedback`, `CommsOK/CommsAlarm`, `FilterBlockedAlarm`), `DP_n` (1–2: `Value`, hi/lo alarm + SPs), `Temp_n`/`RH_n` (1–3), `Damper`, `DuctHeater`, `Dehum`, `ExhaustFan` (where fitted), `Door_n` (1–2), `Maglock`, `Lights` (red/green), `PC` (`Count05`, `Count5`, `ClassAchieved`, `ClassDesign`), `ACH`, `Occupancy`, `Status` (`RELEASED|IN_USE|CLEANING|OUT_OF_SPEC`), `OK`. ≈ 55 tags/room, ≈ 950 in all (hidden `_Sim_/State/*` excluded from the site scope).
+- **Physics (1 s tick, speed 1 — the dynamics are already seconds to minutes):** room pressure from FFU supply, exhaust, AHU supply and leakage plus door open area toward the neighbour; airlock interlocks hold the second maglock while the first door is open; door traffic from occupancy events (every 1–3 min per busy room); ACH from CFM and volume; T/RH first-order to setpoint through coil, heater and dehumidifier; particles rise with occupancy, door events and FFU loss, decay with ACH; `ClassAchieved` from counts; status timers (cleaning cycles, release); filter loading (`OnBoardPressure` creeps, `FilterBlockedAlarm` over limit) accelerated by `_Sim_/FilterAccel` so days read as tens of minutes; `CFMFeedback` lags `Setpoint`.
+- **Scenarios (`cr.*` library):** `door_held_open(room)`, `interlock_breach(airlock)` (both doors open → cascade reversal), `ffu_failure(room, n)`, `filter_loaded(room)`, `ahu_trip(n)`, `rh_excursion(room)`, `particle_excursion(room)`, `power_loss`, `restore`; API `status`, `set_scenario`, `set_speed`, `set_filter_accel`, `set_station(n, rooms)`, `set_room_status(room, state)`, `clear_fault`.
+- **Alarms:** DP hi/lo per sensor, T/RH hi/lo, cascade reversal, door held open > 30 s, interlock breach, FFU comms / filter blocked / run failure, particle class exceeded, AHU fault, dehumidifier comms. **History:** DP/T/RH/particles at 1 s on change, FFU feedback at 5 s, status and alarms on change.
+
+### Deployment
+**Repository:** the cleanroom demo is **not** part of the public showcase monorepo. It lives in the private repo `EckmanTechLLC/ignite-cleanroom` (`sim/cleanroom/`, `cleanroom/`, `cleanroom-kiosk/`, its own `deploy` branch and `deploy.mjs`), consuming `@ignite/client` and `@ignite/theme` as pinned git dependencies on the public showcase repo. Site records point at the private repo with a read-only PAT (`Pat` field, supplied by the operator, never written to a file). Sites `cleanroom` (servePath `cleanroom`, `TagPathPatterns` `[default]CR/**`, `RequireSignature` true) and `cleanroom-kiosk` (servePath `cleanroom-kiosk`, scope `[default]CR/Rooms/**`, `[default]CR/Stations/**`, `[default]CR/KPI/**`; key only). Two Home → Launch cards. Operator items on the lab: an **alarm journal** (none exists; the Alarm journal page is empty without it) — created by the operator, not by an agent.
+
+### Consequences
+- Fifth and sixth frameworks; Angular brings its own builder into the monorepo (contained to `cleanroom/`).
+- The module gains a Part 11 contract (ADR-006) that applies to every site: optional signatures, mandatory when a site asks.
+- Per-page subscriptions become the pattern for larger models; the 1000-tag cap is respected by subscribing to what the page shows.
+- Lighthouse ≥ 90 carried as "recorded, not met on software GL" for the WebGL pages, as before.
+
+### Tasks
+| Task | Scope | Depends on |
+|---|---|---|
+| task-88-cr-sim | `sim/cleanroom/` Jython sim, tag model, alarms, history, `cr` library; verified on the lab | — |
+| task-89-esig-module | ADR-006; `RequireSignature`; signature verification + reason in audit on write/ack/library; tests; build + deploy | — |
+| task-90-cr-scaffold | `cleanroom/` (Angular) and `cleanroom-kiosk/` (Lit) workspaces; `@ignite/client` signature options and per-page subscription helper; site records; first deploy | 88, 89 |
+| task-91-cr-hero | Three.js suite scene: plan/cutaway cameras, airflow, doors, states, filters, hover/select | 90 |
+| task-92-cr-hero-detail | detail pass (modelled FFUs, pass-throughs, equipment, gowning benches, LAF hood, pipework, signage) | 91 |
+| task-93-cr-pages | rooms, trends, alarms, journal, audit, control (signature dialog), stations, identity | 90 |
+| task-94-cr-kiosk | Lit kiosk | 90 |
+| task-95-cr-ship | close-out: smoke matrix (both sites, signature paths), perf/a11y, screenshots, docs | 92, 93, 94 |
