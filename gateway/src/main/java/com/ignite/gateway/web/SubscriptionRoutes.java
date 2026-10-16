@@ -1,11 +1,14 @@
 package com.ignite.gateway.web;
 
+import com.ignite.gateway.SettingsUtil;
 import com.ignite.gateway.records.SiteRecord;
 import com.inductiveautomation.ignition.common.QualifiedPath;
 import com.inductiveautomation.ignition.common.alarming.AlarmEvent;
 import com.inductiveautomation.ignition.common.alarming.AlarmListener;
 import com.inductiveautomation.ignition.common.browsing.BrowseFilter;
 import com.inductiveautomation.ignition.common.browsing.Results;
+import com.inductiveautomation.ignition.common.gson.JsonArray;
+import com.inductiveautomation.ignition.common.gson.JsonElement;
 import com.inductiveautomation.ignition.common.gson.JsonNull;
 import com.inductiveautomation.ignition.common.gson.JsonObject;
 import com.inductiveautomation.ignition.common.gson.JsonPrimitive;
@@ -32,8 +35,11 @@ import java.util.Date;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -42,15 +48,19 @@ import java.util.concurrent.atomic.AtomicLong;
  * Server-Sent Events (SSE) endpoint for real-time tag value and alarm subscriptions.
  *
  * Route:
- *   GET /sse  — open an SSE stream; subscriptions specified in query params
+ *   GET  /sse                 — open an SSE stream; subscriptions specified in query params
+ *   POST /sse/subscriptions   — register a (long) subscription list, returns an id for GET /sse?subscription=
  *
  * Query parameters:
  *   paths   — comma-separated tag paths to subscribe to (optional)
  *             e.g. paths=[default]Folder/MyTag,[default]Folder/OtherTag
- *             Folder entries: "[prov]Folder/*" subscribes to the direct leaf (atomic) tags of
- *             Folder; "[prov]Folder/**" subscribes to all leaf tags recursively. They are
- *             expanded once, by tag browse, at connect time. At most MAX_EXPANDED_TAGS (1000)
- *             tags per connection, otherwise 400 {"error":"too many tags in subscription"}.
+ *             Patterns (see {@link TagPattern}): a segment may contain "*" (one segment, or
+ *             any characters inside it), the last segment may be "**" (all leaves, any depth):
+ *             "[prov]Folder/*", "[prov]Folder/**", "[prov]Rooms/&#42;/DP_1/Value". They are
+ *             expanded once, by tag browse, at connect time. At most the Gateway Setting
+ *             maxSubscriptionTags (default 1000) tags per connection, otherwise
+ *             400 {"error":"too many tags in subscription (limit N)"}.
+ *   subscription — id from POST /sse/subscriptions (instead of paths/alarms/path)
  *   alarms  — "true" to receive alarm events (default: false)
  *   path    — alarm source path prefix filter when alarms=true (optional, default = all)
  *   apiKey  — API key for auth (or use X-Ignite-Key header)
@@ -72,8 +82,10 @@ import java.util.concurrent.atomic.AtomicLong;
  * Auth: X-Ignite-Key header or apiKey query param matched against any site's API key.
  * An active Ignition session (non-empty actor) is also accepted.
  *
- * Capacity: at most MAX_SSE_CLIENTS concurrent streams; beyond that 503 {"error":"too many
- * live connections"}. Each stream holds one servlet thread. A stream ends when the client
+ * Capacity: at most the Gateway Setting maxSseClients (default 64, read per connect) concurrent
+ * streams; beyond that 503 {"error":"too many live connections"}. The route semaphore is sized
+ * at mount time (max(setting, 64) + headroom), so raising the setting past the mount-time value
+ * needs a module restart. Each stream holds one servlet thread. A stream ends when the client
  * disconnects (detected on the next write; heartbeat every 10 s), after MAX_CONNECTION_MS, or
  * when the module shuts down ({@link #shutdownAll()}).
  */
@@ -92,22 +104,76 @@ public final class SubscriptionRoutes {
     private static final int QUEUE_CAPACITY = 500;
 
     /**
-     * Maximum concurrent SSE streams, enforced by our own counter (JSON 503). The gateway's
-     * per-route Semaphore (default 5 permits, 2 s wait) is raised above this so ours trips first.
+     * Concurrent SSE streams are limited by our own counter (JSON 503) against the Gateway Setting
+     * maxSseClients, read per connect. The gateway's per-route Semaphore (default 5 permits, 2 s wait)
+     * is raised above the cap so ours trips first; it is fixed at mount time to
+     * max(setting at mount, ROUTE_MIN_CLIENTS) + ROUTE_PERMIT_HEADROOM.
      */
-    private static final int MAX_SSE_CLIENTS = 64;
+    private static final int ROUTE_MIN_CLIENTS = 64;
 
-    /** Headroom on the gateway route semaphore over MAX_SSE_CLIENTS (rejected requests briefly hold a permit). */
+    /** Headroom on the gateway route semaphore over the client cap (rejected requests briefly hold a permit). */
     private static final int ROUTE_PERMIT_HEADROOM = 16;
 
-    /** Maximum tag paths per connection after folder expansion. */
-    private static final int MAX_EXPANDED_TAGS = 1000;
+    /** How long a registered subscription stays valid after its last use. */
+    private static final long REGISTRATION_TTL_MS = 60_000L;
+
+    /** Upper bound on live registrations (each may hold up to maxSubscriptionTags paths). */
+    private static final int MAX_REGISTRATIONS = 256;
 
     /** Timeout for browse / subscribe / read calls. */
     private static final long TAG_TIMEOUT_SEC = 10L;
 
     private static final AtomicInteger ACTIVE = new AtomicInteger();
     private static final Set<Conn> STREAMS = ConcurrentHashMap.newKeySet();
+    private static final ConcurrentHashMap<String, Registered> REGISTERED = new ConcurrentHashMap<>();
+    private static ScheduledExecutorService sweeper;
+
+    /** A subscription list registered by POST /sse/subscriptions: expanded, scope-checked, bound to one site and credential. */
+    private static final class Registered {
+        final String site;
+        final String binding;
+        final List<String> paths;
+        final boolean alarms;
+        final String alarmPath;
+        volatile long expiresAt;
+
+        Registered(String site, String binding, Resolved r) {
+            this.site = site;
+            this.binding = binding;
+            this.paths = r.paths;
+            this.alarms = r.alarms;
+            this.alarmPath = r.alarmPath;
+            this.expiresAt = System.currentTimeMillis() + REGISTRATION_TTL_MS;
+        }
+    }
+
+    /** Expanded subscription: tag path strings plus the alarm request. */
+    private static final class Resolved {
+        final List<String> paths;
+        final boolean alarms;
+        final String alarmPath;
+
+        Resolved(List<String> paths, boolean alarms, String alarmPath) {
+            this.paths = paths;
+            this.alarms = alarms;
+            this.alarmPath = alarmPath;
+        }
+    }
+
+    /** A requested path lies outside the site's tag scope (maps to 403). */
+    private static final class ScopeDenied extends Exception {
+        final String path;
+
+        ScopeDenied(String path) {
+            super(path, null, false, false);
+            this.path = path;
+        }
+    }
+
+    private static void sweepRegistrations() {
+        long now = System.currentTimeMillis();
+        REGISTERED.values().removeIf(r -> r.expiresAt < now);
+    }
 
     private SubscriptionRoutes() {}
 
@@ -129,6 +195,13 @@ public final class SubscriptionRoutes {
 
     /** Ends every open stream (module shutdown) so no servlet threads or slots stay occupied. */
     public static void shutdownAll() {
+        synchronized (REGISTERED) {
+            if (sweeper != null) {
+                sweeper.shutdownNow();
+                sweeper = null;
+            }
+        }
+        REGISTERED.clear();
         for (Conn c : STREAMS) {
             c.stop = true;
             c.thread.interrupt();
@@ -161,6 +234,9 @@ public final class SubscriptionRoutes {
 
     public static void mountRoutes(RouteGroup routes, GatewayContext context) {
 
+        int configured = SettingsUtil.maxSseClients(context);
+        int routeClients = Math.max(configured, ROUTE_MIN_CLIENTS);
+
         // GET /sse — SSE subscription stream
         routes.newRoute("/sse")
                 .method(HttpMethod.GET)
@@ -170,10 +246,30 @@ public final class SubscriptionRoutes {
                     return null;
                 }))
                 .accessControl(AccessControlStrategy.OPEN_ROUTE)
-                .concurrency(MAX_SSE_CLIENTS + ROUTE_PERMIT_HEADROOM, 0)
+                .concurrency(routeClients + ROUTE_PERMIT_HEADROOM, 0)
                 .mount();
 
-        log.info("SSE subscription route mounted at /sse (max " + MAX_SSE_CLIENTS + " clients).");
+        // POST /sse/subscriptions — register a subscription list (expansion + scope checks happen here)
+        routes.newRoute("/sse/subscriptions")
+                .method(HttpMethod.POST)
+                .type(RouteGroup.TYPE_JSON)
+                .handler((req, res) -> guarded(req, res, () -> registerSubscription(req, res, context)))
+                .accessControl(AccessControlStrategy.OPEN_ROUTE)
+                .mount();
+
+        synchronized (REGISTERED) {
+            if (sweeper == null) {
+                sweeper = Executors.newSingleThreadScheduledExecutor(r -> {
+                    Thread t = new Thread(r, "ignite-sse-registration-sweeper");
+                    t.setDaemon(true);
+                    return t;
+                });
+                sweeper.scheduleWithFixedDelay(SubscriptionRoutes::sweepRegistrations, 15, 15, TimeUnit.SECONDS);
+            }
+        }
+
+        log.info("SSE subscription route mounted at /sse (max " + configured + " clients, route permits sized for "
+                + routeClients + "); POST /sse/subscriptions mounted.");
     }
 
     // -------------------------------------------------------------------------
@@ -203,7 +299,7 @@ public final class SubscriptionRoutes {
         }
 
         // --- claim a slot (released exactly once in the finally below) ---
-        if (ACTIVE.incrementAndGet() > MAX_SSE_CLIENTS) {
+        if (ACTIVE.incrementAndGet() > SettingsUtil.maxSseClients(context)) {
             ACTIVE.decrementAndGet();
             res.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
             res.setContentType("application/json");
@@ -226,63 +322,40 @@ public final class SubscriptionRoutes {
         GatewayTagManager tagManager = context.getTagManager();
 
         // --- parse params ---
+        String subscriptionParam = req.getParameter("subscription");
         String pathsParam = req.getParameter("paths");
-        boolean wantsAlarms = "true".equalsIgnoreCase(req.getParameter("alarms"));
-        String alarmPathParam = req.getParameter("path");
-
-        List<TagPath> tagPaths = new ArrayList<>();
-        if (pathsParam != null && !pathsParam.isBlank()) {
-            Set<String> seen = new LinkedHashSet<>();
-            for (String p : pathsParam.split(",")) {
-                String trimmed = p.trim();
-                if (trimmed.isEmpty()) {
-                    continue;
-                }
-                if (trimmed.endsWith("/**") || trimmed.endsWith("/*")) {
-                    boolean recursive = trimmed.endsWith("/**");
-                    String base = trimmed.substring(0, trimmed.length() - (recursive ? 3 : 2));
-                    TagPath baseParsed = TagPathParser.parseSafe(base);
-                    if (baseParsed == null) {
-                        throw new AuthUtil.BadRequestException("invalid tag path: " + trimmed);
-                    }
-                    if (!scope.allowsFolderBrowse(baseParsed)) {
-                        denyScope(res, site, trimmed);
-                        return;
-                    }
-                    expandFolder(tagManager, baseParsed, base, recursive, seen, scope);
-                } else {
-                    TagPath parsed = TagPathParser.parseSafe(trimmed);
-                    if (parsed == null) {
-                        throw new AuthUtil.BadRequestException("invalid tag path: " + trimmed);
-                    }
-                    if (!scope.allows(parsed)) {
-                        denyScope(res, site, trimmed);
-                        return;
-                    }
-                    if (seen.add(parsed.toString())) {
-                        checkCap(seen.size());
-                    }
+        Resolved resolved;
+        if (subscriptionParam != null && !subscriptionParam.isBlank()) {
+            if (pathsParam != null && !pathsParam.isBlank()) {
+                throw new AuthUtil.BadRequestException("subscription cannot be combined with paths");
+            }
+            resolved = lookupRegistered(req, res, context, site, scope, subscriptionParam.trim());
+            if (resolved == null) {
+                return;
+            }
+            pathsParam = "subscription:" + subscriptionParam.trim();
+        } else {
+            List<String> entries = new ArrayList<>();
+            if (pathsParam != null) {
+                for (String p : pathsParam.split(",")) {
+                    entries.add(p);
                 }
             }
-            for (String s : seen) {
-                TagPath tp = TagPathParser.parseSafe(s);
-                if (tp != null) {
-                    tagPaths.add(tp);
-                }
-            }
-            if (!scope.isUnrestricted() && tagPaths.isEmpty()) {
-                denyScope(res, site, pathsParam);
+            try {
+                resolved = resolve(tagManager, scope, SettingsUtil.maxSubscriptionTags(context), entries,
+                        "true".equalsIgnoreCase(req.getParameter("alarms")), req.getParameter("path"));
+            } catch (ScopeDenied d) {
+                denyScope(res, site, d.path);
                 return;
             }
         }
-
-        QualifiedPath alarmQPath = null;
-        if (wantsAlarms) {
-            alarmQPath = (alarmPathParam != null && !alarmPathParam.isBlank())
-                    ? QualifiedPath.parseSafe(alarmPathParam)
-                    : QualifiedPath.newBuilder().build();
-            if (alarmQPath == null) {
-                throw new AuthUtil.BadRequestException("invalid alarm path: " + alarmPathParam);
+        boolean wantsAlarms = resolved.alarms;
+        QualifiedPath alarmQPath = resolved.alarms ? alarmQualifiedPath(resolved.alarmPath) : null;
+        List<TagPath> tagPaths = new ArrayList<>(resolved.paths.size());
+        for (String s : resolved.paths) {
+            TagPath tp = TagPathParser.parseSafe(s);
+            if (tp != null) {
+                tagPaths.add(tp);
             }
         }
 
@@ -390,6 +463,166 @@ public final class SubscriptionRoutes {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // Registration (POST /sse/subscriptions)
+    // -------------------------------------------------------------------------
+
+    private static Object registerSubscription(RequestContext req, HttpServletResponse res,
+                                               GatewayContext context) throws Exception {
+        if (!AuthUtil.isAuthorized(req, context)) {
+            res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return AuthUtil.errorJson("Unauthorized");
+        }
+        SiteRecord site = AuthUtil.requireSite(req, context);
+        if (site == null) {
+            res.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return AuthUtil.errorJson("site required: send X-Ignite-Site or an API key");
+        }
+        JsonObject body = AuthUtil.parseJsonObject(req);
+        List<String> entries = new ArrayList<>();
+        JsonElement pathsEl = body.get("paths");
+        if (pathsEl != null && !pathsEl.isJsonNull()) {
+            if (!pathsEl.isJsonArray()) {
+                throw new AuthUtil.BadRequestException("paths must be an array of strings");
+            }
+            for (JsonElement el : (JsonArray) pathsEl) {
+                if (!el.isJsonPrimitive() || !el.getAsJsonPrimitive().isString()) {
+                    throw new AuthUtil.BadRequestException("paths must be an array of strings");
+                }
+                entries.add(el.getAsString());
+            }
+        }
+        JsonElement alarmsEl = body.get("alarms");
+        boolean alarms = alarmsEl != null && alarmsEl.isJsonPrimitive() && alarmsEl.getAsBoolean();
+        JsonElement pathEl = body.get("path");
+        String alarmPath = pathEl != null && pathEl.isJsonPrimitive() ? pathEl.getAsString() : null;
+
+        sweepRegistrations();
+        if (REGISTERED.size() >= MAX_REGISTRATIONS) {
+            res.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+            return AuthUtil.errorJson("too many registered subscriptions");
+        }
+        Resolved resolved;
+        try {
+            resolved = resolve(context.getTagManager(), TagScope.forSite(site),
+                    SettingsUtil.maxSubscriptionTags(context), entries, alarms, alarmPath);
+        } catch (ScopeDenied d) {
+            return TagScope.deny(res, log, site, d.path);
+        }
+        String id = UUID.randomUUID().toString().replace("-", "");
+        REGISTERED.put(id, new Registered(site.getName(), credentialBinding(req, context), resolved));
+
+        JsonObject out = new JsonObject();
+        out.addProperty("id", id);
+        out.addProperty("count", resolved.paths.size());
+        out.addProperty("expiresInMs", REGISTRATION_TTL_MS);
+        return out;
+    }
+
+    /**
+     * Looks up a registered subscription for GET /sse?subscription=; refreshes its expiry. Writes the
+     * error response and returns null when unknown/expired (404) or bound to another site or credential (403).
+     */
+    private static Resolved lookupRegistered(RequestContext req, HttpServletResponse res, GatewayContext context,
+                                             SiteRecord site, TagScope scope, String id) throws Exception {
+        Registered r = REGISTERED.get(id);
+        if (r == null || r.expiresAt < System.currentTimeMillis()) {
+            REGISTERED.remove(id);
+            res.setStatus(HttpServletResponse.SC_NOT_FOUND);
+            res.setContentType("application/json");
+            res.getWriter().write(AuthUtil.errorJson("subscription not found or expired").toString());
+            return null;
+        }
+        if (!r.site.equals(site.getName()) || !r.binding.equals(credentialBinding(req, context))) {
+            res.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            res.setContentType("application/json");
+            res.getWriter().write(AuthUtil.errorJson("subscription belongs to another client").toString());
+            return null;
+        }
+        if (!scope.isUnrestricted()) {
+            for (String p : r.paths) {
+                if (!scope.allows(p)) {
+                    denyScope(res, site, p);
+                    return null;
+                }
+            }
+        }
+        r.expiresAt = System.currentTimeMillis() + REGISTRATION_TTL_MS;
+        return new Resolved(r.paths, r.alarms, r.alarmPath);
+    }
+
+    /** Credential kind plus actor: a registered id may only be used by the credential that registered it. */
+    private static String credentialBinding(RequestContext req, GatewayContext context) {
+        String kind = AuthUtil.extractBearerToken(req) != null ? "bearer"
+                : AuthUtil.webSessionUser(req).isPresent() ? "session" : "key";
+        return kind + ":" + AuthUtil.getActorIdentity(req, context);
+    }
+
+    private static QualifiedPath alarmQualifiedPath(String alarmPath) {
+        return (alarmPath != null && !alarmPath.isBlank())
+                ? QualifiedPath.parseSafe(alarmPath)
+                : QualifiedPath.newBuilder().build();
+    }
+
+    // -------------------------------------------------------------------------
+    // Resolution: entries to expanded, scope-checked tag paths
+    // -------------------------------------------------------------------------
+
+    /**
+     * Expands subscription entries (literal paths, folder/segment patterns) against the tag browse,
+     * enforcing the site scope and the tag cap; validates the alarm path. A blank list is allowed.
+     */
+    private static Resolved resolve(GatewayTagManager tagManager, TagScope scope, int cap,
+                                    List<String> entries, boolean wantsAlarms, String alarmPathParam)
+            throws Exception {
+        Set<String> seen = new LinkedHashSet<>();
+        boolean any = false;
+        for (String p : entries) {
+            String trimmed = p.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            any = true;
+            if (trimmed.indexOf('*') >= 0) {
+                TagPattern pat = TagPattern.parse(trimmed);
+                if (pat == null) {
+                    throw new AuthUtil.BadRequestException("invalid tag pattern: " + trimmed);
+                }
+                String prefix = pat.prefixPath();
+                TagPath prefixPath = TagPathParser.parseSafe(prefix);
+                if (prefixPath == null) {
+                    throw new AuthUtil.BadRequestException("invalid tag pattern: " + trimmed);
+                }
+                if (!scope.allowsFolderBrowse(prefixPath)) {
+                    throw new ScopeDenied(trimmed);
+                }
+                expandPattern(tagManager, pat, prefixPath, prefix, pat.prefixLength(), seen, scope, cap, true);
+            } else {
+                TagPath parsed = TagPathParser.parseSafe(trimmed);
+                if (parsed == null) {
+                    throw new AuthUtil.BadRequestException("invalid tag path: " + trimmed);
+                }
+                if (!scope.allows(parsed)) {
+                    throw new ScopeDenied(trimmed);
+                }
+                if (seen.add(parsed.toString())) {
+                    checkCap(seen.size(), cap);
+                }
+            }
+        }
+        if (any && !scope.isUnrestricted() && seen.isEmpty()) {
+            throw new ScopeDenied(String.join(",", entries));
+        }
+        String alarmPath = null;
+        if (wantsAlarms) {
+            if (alarmQualifiedPath(alarmPathParam) == null) {
+                throw new AuthUtil.BadRequestException("invalid alarm path: " + alarmPathParam);
+            }
+            alarmPath = alarmPathParam;
+        }
+        return new Resolved(new ArrayList<>(seen), wantsAlarms, alarmPath);
+    }
+
     /** Writes the 403 "tag path not permitted" JSON body (stream not opened). */
     private static void denyScope(HttpServletResponse res, SiteRecord site, Object path) throws java.io.IOException {
         res.setContentType("application/json");
@@ -424,41 +657,56 @@ public final class SubscriptionRoutes {
     // Folder expansion
     // -------------------------------------------------------------------------
 
-    private static void checkCap(int size) {
-        if (size > MAX_EXPANDED_TAGS) {
-            throw new AuthUtil.BadRequestException("too many tags in subscription");
+    private static void checkCap(int size, int cap) {
+        if (size > cap) {
+            throw new AuthUtil.BadRequestException("too many tags in subscription (limit " + cap + ")");
         }
     }
 
     /**
-     * Browses a folder and adds its leaf (atomic) tag paths to {@code out}; folders and UDT
-     * instances are descended into when {@code recursive}. Same provider/path syntax as /tags/browse.
+     * Browses {@code folder} (at {@code depth} below the provider) and adds the leaf (atomic) tag
+     * paths selected by {@code pat}; descends only into folders / UDT instances whose name matches
+     * the next segment. Literal next segments are entered directly without browsing the parent.
+     * Same provider/path syntax as /tags/browse. {@code mustExist} (the starting folder only)
+     * turns a missing folder into 400; below it, missing folders are skipped.
      */
-    private static void expandFolder(GatewayTagManager tagManager, TagPath folder, String folderStr,
-                                     boolean recursive, Set<String> out, TagScope scope)
-            throws Exception {
+    private static void expandPattern(GatewayTagManager tagManager, TagPattern pat, TagPath folder,
+                                      String folderStr, int depth, Set<String> out, TagScope scope,
+                                      int cap, boolean mustExist) throws Exception {
+        while (pat.isFolderPosition(depth) && pat.isLiteralAt(depth)) {
+            folderStr = folderStr + (folderStr.endsWith("]") ? "" : "/") + pat.segmentAt(depth);
+            folder = TagPathParser.parseSafe(folderStr);
+            depth++;
+            if (folder == null || !scope.allowsFolderBrowse(folder)) {
+                return;
+            }
+        }
         Results<NodeDescription> results = tagManager.browseAsync(folder, BrowseFilter.NONE)
                 .get(TAG_TIMEOUT_SEC, TimeUnit.SECONDS);
         if (results == null || results.getResults() == null) {
             // the browse of a non-existent folder/provider returns no result list
-            throw new AuthUtil.BadRequestException("tag folder not found: " + folderStr);
+            if (mustExist) {
+                throw new AuthUtil.BadRequestException("tag folder not found: " + folderStr);
+            }
+            return;
         }
         for (NodeDescription node : results.getResults()) {
             TagPath full = node.getFullPath();
             String childStr = (full != null && !full.toString().isEmpty())
                     ? full.toString()
-                    : folderStr + "/" + node.getName();
+                    : folderStr + (folderStr.endsWith("]") ? "" : "/") + node.getName();
             TagObjectType type = node.getObjectType();
             if (type == TagObjectType.AtomicTag) {
-                if (scope.allows(childStr) && out.add(childStr)) {
-                    checkCap(out.size());
+                if (pat.matchesLeaf(depth, node.getName()) && scope.allows(childStr) && out.add(childStr)) {
+                    checkCap(out.size(), cap);
                 }
-            } else if (recursive && node.hasChildren()
-                    && (type == TagObjectType.Folder || type == TagObjectType.UdtInstance)) {
+            } else if (node.hasChildren()
+                    && (type == TagObjectType.Folder || type == TagObjectType.UdtInstance)
+                    && pat.matchesFolder(depth, node.getName())) {
                 TagPath childPath = full != null && !full.toString().isEmpty()
                         ? full : TagPathParser.parseSafe(childStr);
                 if (childPath != null && scope.allowsFolderBrowse(childPath)) {
-                    expandFolder(tagManager, childPath, childStr, true, out, scope);
+                    expandPattern(tagManager, pat, childPath, childStr, depth + 1, out, scope, cap, false);
                 }
             }
         }

@@ -45,6 +45,14 @@ public class IgniteSettingsRecord extends PersistentRecord {
     public static final IntField LoginLockoutSeconds = new IntField(META, "LoginLockoutSeconds")
             .setDefault(300);
 
+    /** Maximum tags per SSE subscription after pattern expansion. Default 1000, range 1-50000. */
+    public static final IntField MaxSubscriptionTags = new IntField(META, "MaxSubscriptionTags")
+            .setDefault(1000);
+
+    /** Maximum concurrent SSE streams. Default 64, range 1-1000 (raising it past the mount-time value needs a module restart). */
+    public static final IntField MaxSseClients = new IntField(META, "MaxSseClients")
+            .setDefault(64);
+
     // -------------------------------------------------------------------------
     // RecordMeta contract
     // -------------------------------------------------------------------------
@@ -82,6 +90,14 @@ public class IgniteSettingsRecord extends PersistentRecord {
         return getInt(LoginLockoutSeconds);
     }
 
+    public Integer getMaxSubscriptionTags() {
+        return getInt(MaxSubscriptionTags);
+    }
+
+    public Integer getMaxSseClients() {
+        return getInt(MaxSseClients);
+    }
+
     // -------------------------------------------------------------------------
     // Typed setters
     // -------------------------------------------------------------------------
@@ -104,5 +120,13 @@ public class IgniteSettingsRecord extends PersistentRecord {
 
     public void setLoginLockoutSeconds(Integer value) {
         setInt(LoginLockoutSeconds, value);
+    }
+
+    public void setMaxSubscriptionTags(Integer value) {
+        setInt(MaxSubscriptionTags, value);
+    }
+
+    public void setMaxSseClients(Integer value) {
+        setInt(MaxSseClients, value);
     }
 }

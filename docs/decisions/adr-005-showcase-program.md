@@ -56,6 +56,7 @@ Each demo is a single full-viewport scene with overlays (slide-in panels, HUD st
 - Env bootstrap from `window.__IGNITE_ENV__` (`IGNITE_GATEWAY_URL`, `IGNITE_SITE`, `IGNITE_API_KEY`).
 - Credential policy exactly as ADR-004: `X-Ignite-Site` on every call, `X-Ignite-Key` header, Bearer token when logged in; on SSE the key/token/site travel as query params.
 - SSE client with reconnect/backoff, the 30-minute reconnect handled transparently, and **frame coalescing**: changes are buffered and delivered once per animation frame as a batch (fixes ADR-002's one-render-per-event problem).
+- (task-97) Subscriptions accept segment-wildcard patterns; lists too long for the URL (over 6 000 characters) are registered via `POST /sse/subscriptions` and streamed with `?subscription=<id>`, re-registered transparently on 404/410; the tag and client caps are Gateway Settings (`docs/api/sse.md`).
 - REST wrappers: tags (read/write/browse/history), alarms (status/history/acknowledge), scripts (library/system/projects), db (named), audit, auth (login/session/logout) with 401 → `unauthorized` event.
 - Vitest unit tests against a mocked fetch/EventSource. Published only as a workspace package.
 
