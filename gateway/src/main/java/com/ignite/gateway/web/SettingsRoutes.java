@@ -109,6 +109,8 @@ public final class SettingsRoutes {
 
         Integer maxFailures = null;
         Integer lockoutSeconds = null;
+        Integer maxTags = null;
+        Integer maxClients = null;
         try {
             if (data.has("loginMaxFailures")) {
                 maxFailures = data.get("loginMaxFailures").getAsInt();
@@ -122,6 +124,22 @@ public final class SettingsRoutes {
                 if (lockoutSeconds < 0) {
                     res.setStatus(HttpServletResponse.SC_BAD_REQUEST);
                     return AuthUtil.errorJson("loginLockoutSeconds must be >= 0");
+                }
+            }
+            if (data.has("maxSubscriptionTags")) {
+                maxTags = data.get("maxSubscriptionTags").getAsInt();
+                if (maxTags < 1 || maxTags > SettingsUtil.MAX_MAX_SUBSCRIPTION_TAGS) {
+                    res.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                    return AuthUtil.errorJson("maxSubscriptionTags must be between 1 and "
+                            + SettingsUtil.MAX_MAX_SUBSCRIPTION_TAGS);
+                }
+            }
+            if (data.has("maxSseClients")) {
+                maxClients = data.get("maxSseClients").getAsInt();
+                if (maxClients < 1 || maxClients > SettingsUtil.MAX_MAX_SSE_CLIENTS) {
+                    res.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                    return AuthUtil.errorJson("maxSseClients must be between 1 and "
+                            + SettingsUtil.MAX_MAX_SSE_CLIENTS);
                 }
             }
         } catch (RuntimeException e) {
@@ -144,6 +162,12 @@ public final class SettingsRoutes {
         }
         if (lockoutSeconds != null) {
             settings.setLoginLockoutSeconds(lockoutSeconds);
+        }
+        if (maxTags != null) {
+            settings.setMaxSubscriptionTags(maxTags);
+        }
+        if (maxClients != null) {
+            settings.setMaxSseClients(maxClients);
         }
 
         context.getLocalPersistenceInterface().save(settings);
@@ -169,6 +193,8 @@ public final class SettingsRoutes {
         obj.addProperty("loginAuthProfile", s.getLoginAuthProfile());
         obj.addProperty("loginMaxFailures", s.getLoginMaxFailures());
         obj.addProperty("loginLockoutSeconds", s.getLoginLockoutSeconds());
+        obj.addProperty("maxSubscriptionTags", s.getMaxSubscriptionTags());
+        obj.addProperty("maxSseClients", s.getMaxSseClients());
         return obj;
     }
 }

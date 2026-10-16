@@ -59,7 +59,7 @@ Four demos live in [EckmanTechLLC/ignite-showcase](https://github.com/EckmanTech
 
 Route families they exercise:
 
-- `GET /sse` - one folder subscription per page (111 / 675 / 405 / 908 tags; the brewery model has 1 039 tags, so it subscribes with 12 folder patterns because one subscription is capped at 1 000), with an initial snapshot.
+- `GET /sse` - one folder subscription per page (111 / 675 / 405 / 908 tags), with an initial snapshot. Paths accept segment wildcards (`[default]CR/Rooms/*/DP_1/Value`) and long lists are registered with `POST /sse/subscriptions`; the per-subscription tag cap (default 1 000) and the client cap (default 64) are Gateway Settings (`maxSubscriptionTags`, `maxSseClients`), see [docs/api/sse.md](docs/api/sse.md).
 - `GET /system/status` - gateway name, uptime and platform trial state (see [docs/api/system.md](docs/api/system.md)).
 - `GET /tags/history` - trend charts and the trial/historian health probe.
 - `GET /alarms/status`, `POST /alarms/acknowledge` - alarm boards, acknowledge tier-gated, optionally signed.

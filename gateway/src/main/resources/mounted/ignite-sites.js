@@ -125,7 +125,10 @@ System.register(['react'], function (_export) {
                     maxHeight: '90vh',
                     display: 'flex',
                     flexDirection: 'column',
+                    overflow: 'hidden',
                 },
+                // the form wraps body + footer: flex column so the body scrolls and the footer stays visible
+                modalForm: { display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0 },
                 modalHeader: {
                     padding: '16px 20px',
                     borderBottom: '1px solid #e5e7ea',
@@ -134,8 +137,9 @@ System.register(['react'], function (_export) {
                     justifyContent: 'space-between',
                 },
                 modalTitle: { fontSize: '16px', fontWeight: '600', margin: 0 },
-                modalBody: { padding: '20px', overflowY: 'auto', flex: 1 },
+                modalBody: { padding: '20px', overflowY: 'auto', flex: '1 1 auto', minHeight: 0 },
                 modalFooter: {
+                    position: 'sticky', bottom: 0, background: '#fff', flex: '0 0 auto',
                     padding: '12px 20px',
                     borderTop: '1px solid #e5e7ea',
                     display: 'flex',
@@ -463,7 +467,7 @@ System.register(['react'], function (_export) {
                                 onClick: onClose,
                             }, '✕')
                         ),
-                        h('form', { onSubmit: handleSave },
+                        h('form', { onSubmit: handleSave, style: S.modalForm },
                             h('div', { style: S.modalBody },
                                 error && h('div', {
                                     style: Object.assign({}, S.testResult, S.testFail, { marginBottom: '12px', marginTop: 0 })
@@ -744,6 +748,18 @@ System.register(['react'], function (_export) {
                             h('label', { style: S.label }, 'Login Lockout Seconds'),
                             h('input', Object.assign(field('loginLockoutSeconds', 'number'), { min: 0 })),
                             h('div', { style: S.hint }, 'Lockout duration after max failures.'),
+                        ),
+                    ),
+                    h('div', { style: S.row2 },
+                        h('div', { style: S.formGroup },
+                            h('label', { style: S.label }, 'Max Subscription Tags'),
+                            h('input', Object.assign(field('maxSubscriptionTags', 'number'), { min: 1, max: 50000 })),
+                            h('div', { style: S.hint }, 'Tags per SSE subscription after pattern expansion (1\u201350000, default 1000). Applies immediately.'),
+                        ),
+                        h('div', { style: S.formGroup },
+                            h('label', { style: S.label }, 'Max SSE Clients'),
+                            h('input', Object.assign(field('maxSseClients', 'number'), { min: 1, max: 1000 })),
+                            h('div', { style: S.hint }, 'Concurrent SSE streams (1\u20131000, default 64). Raising it above the value at module start needs a module restart.'),
                         ),
                     ),
                     h('button', {
