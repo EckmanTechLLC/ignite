@@ -48,7 +48,7 @@ A page served from another origin can call the API when that origin is listed in
 
 ## Showcase
 
-Four demos live in [EckmanTechLLC/ignite-showcase](https://github.com/EckmanTechLLC/ignite-showcase) (`deploy` branch served by four site records, see [ADR-005](docs/decisions/adr-005-showcase-program.md) and Amendments A1 and A2). Each is a single full-viewport screen over a gateway-side simulation, driven only through the routes below. The earlier dairy-plant demo (`demo/`, ADR-002) is retired; its source stays in this repo.
+Four demos live in [EckmanTechLLC/ignite-showcase](https://github.com/EckmanTechLLC/ignite-showcase) (`deploy` branch served by four site records, see [ADR-005](docs/decisions/adr-005-showcase-program.md) and Amendments A1 and A2). A fifth demo, the GMP Cleanroom Suite (Amendment A4), lives in a separate **private** repository (ignite-cleanroom), is not part of the public showcase, and is the one that exercises electronic signatures ([ADR-006](docs/decisions/adr-006-electronic-signatures.md)). Each is a single full-viewport screen over a gateway-side simulation, driven only through the routes below. The earlier dairy-plant demo (`demo/`, ADR-002) is retired; its source stays in this repo.
 
 | Demo | Mount | Stack | Shows |
 |---|---|---|---|
@@ -56,6 +56,7 @@ Four demos live in [EckmanTechLLC/ignite-showcase](https://github.com/EckmanTech
 | Data Center | `/data/ignite/s/datacenter/` | Vue 3, TresJS (Three.js) | A detailed procedural 3D hall (60 racks, CRAHs, UPS, PDUs, ATS, generator, roof chillers) with GPU airflow particles, a lit power and chilled-water path, camera presets 1 to 5, and thermal and power-loss scenarios (CRAH failure, utility loss) |
 | Campus Microgrid | `/data/ignite/s/microgrid/` | Svelte 5, PixiJS | An oblique 2.5D campus map (PV fields, batteries, genset, EV lot, substation) with a real sun, projected shadows, drifting cloud shadows and particle power flows, plus forecast-vs-actual history, tariff and cost, islanding and faults |
 | Craft Brewery | `/data/ignite/s/brewery/` | Solid, Pixi (WebGL) | An isometric brewery: brewhouse, fermentation cellar, packaging line and utilities with batch genealogy, ISA-88 phases, QA holds, OEE and glycol/line-down scenarios |
+| GMP Cleanroom Suite (private repo) | `/data/ignite/s/cleanroom/` and `/data/ignite/s/cleanroom-kiosk/` | Angular 22 + Three.js; Lit (kiosk) | A 15-room pharmaceutical fill-finish suite in Plan and Cutaway with live differential-pressure cascade, interlocked airlocks, FFUs, particle counts and alarms; a control room with signed (21 CFR Part 11 style) setpoint writes and alarm acknowledgement, an audit view, and a read-only station kiosk (ENTER OK / DO NOT ENTER) |
 
 Route families they exercise:
 

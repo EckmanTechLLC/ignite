@@ -257,10 +257,11 @@ Opened as `/s/cleanroom-kiosk/?station=N`; reads `CR/Stations/N/AllowedRooms` an
 |---|---|---|
 | task-88-cr-sim | `sim/cleanroom/` Jython sim, tag model, alarms, history, `cr` library; verified on the lab (complete; private repo) | — |
 | task-89-esig-module | ADR-006; `RequireSignature`; signature verification + reason in audit on write/ack/library; tests; build (complete) | — |
-| task-90-esig-deploy | deploy the e-signature build to the lab; curl verification of the signature contract and regressions | 89 |
-| task-91-cr-scaffold | private repo layout (showcase submodule for `@ignite/client`/`@ignite/theme`), client signature options (public), Angular shell with routes, Lit kiosk shell, deploy pipeline, sites enabled | 88, 90 |
-| task-92-cr-hero | Three.js suite scene: plan/cutaway cameras, airflow, doors, states, filters, hover/select | 91 |
-| task-93-cr-hero-detail | detail pass (modelled FFUs, pass-throughs, equipment, gowning benches, LAF hood, pipework, signage) | 92 |
-| task-94-cr-pages | rooms, trends, alarms, journal, audit, control (signature dialog), stations, identity | 91 |
-| task-95-cr-kiosk | Lit kiosk | 91 |
-| task-96-cr-ship | close-out: smoke matrix (both sites, signature paths), perf/a11y, screenshots, docs | 93, 94, 95 |
+| task-90-esig-deploy | deploy the e-signature build to the lab; curl verification of the signature contract and regressions (complete) | 89 |
+| task-91-cr-scaffold | private repo layout (showcase submodule for `@ignite/client`/`@ignite/theme`), client signature options (public), Angular shell with routes, Lit kiosk shell, deploy pipeline, sites enabled (complete) | 88, 90 |
+| task-92-cr-hero | Three.js suite scene: plan/cutaway cameras, airflow, doors, states, filters, hover/select (complete) | 91 |
+| task-93-cr-hero-detail | detail pass (modelled FFUs, pass-throughs, equipment, gowning benches, LAF hood, pipework, signage) (complete) | 92 |
+| task-94-cr-pages | rooms, trends, alarms, journal, audit, control (signature dialog), stations, identity (complete) | 91 |
+| task-95-cr-kiosk | Lit kiosk (complete) | 91 |
+| task-96-cr-ship | close-out: smoke matrix (both sites, signature paths), perf/a11y, screenshots, docs (complete) | 93, 94, 95 |
+| task-97-sse-patterns-limits | module: SSE segment-wildcard patterns, `POST /sse/subscriptions` registration, tag and client caps as Gateway Settings (complete) | 91 |

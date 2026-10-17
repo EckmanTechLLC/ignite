@@ -40,6 +40,27 @@ Anonymous visitors see everything but cannot operate. Log in as an operator to a
 
 After a demo, set Launch back to nominal at 4x with auto-cycle on, Data Center to normal at 4x, Campus Microgrid to scenario normal at 120x with no faults (Controls, or `mg.restore()`), Craft Brewery to scenario normal at 60x with fermentation acceleration 8, no faults and the line resumed (Controls, or `brew.restore()` then `brew.resume_line()`), and acknowledge remaining alarms.
 
+## Demo 5: GMP Cleanroom Suite (private repo)
+
+Not part of the public showcase: its source is the private ignite-cleanroom repository (`deploy` branch, read through a site personal access token that the operator keeps in the site record). Two sites, both under `/data/ignite/s/`:
+
+- Control room: `/data/ignite/s/cleanroom/` (site 9 `cleanroom`, tag scope `[default]CR/**`, **requireSignature on**). Pages: Overview (Plan and Cutaway), Rooms and `/rooms/108`, Trends, Alarms, Alarm journal, Audit log, Control, Stations.
+- Kiosk: `/data/ignite/s/cleanroom-kiosk/?station=1` to `4` (site 10 `cleanroom-kiosk`, scope `CR/Rooms/**`, `CR/Stations/**`, `CR/KPI/**`, `CR/Time/**`). Read-only; station 1 is the gowning entrance (102 to 104), 2 the filling corridor (108 to 110), 3 compounding (105 to 107), 4 support. Portrait and landscape both work.
+
+Each site has its own read-tier key, injected into the served page like the others (`PUT /sites/9` and `/sites/10` as an administrator; rotate only between demos). The overview streams about 445 tags (22 wildcard patterns), a kiosk station 199 to 307.
+
+Camera and keys on the overview: `V` toggles Plan and Cutaway, `R` resets, `1` to `3` filter (entire, positive, negative), `Esc` clears the selection; the Analog, Digital and Pressure buttons switch the room overlays; click a room for its page. `?perf` plus `P` shows the performance readout.
+
+Show-pieces (administrator, Control page "Scenarios", each a signed library call; or as an operator from a shell with `POST /script/library`, project `demo`):
+
+- `cr.door_held_open(109)`: the Capping door stays open, 109 loses pressure and the cascade into its neighbours sags; the held-open alarm follows after about 30 s.
+- `cr.interlock_breach(107)`: both anteroom doors forced open and the maglock fails; the kiosk for station 3 flips to DO NOT ENTER (Alarm active) within seconds.
+- `cr.ffu_failure(108, 1)`: one filter-fan unit of the filling room stops; ACH and the particle class drift and 108 alarms. `cr.restore()` (Restore normal) clears every fault.
+
+Signature flow (21 CFR Part 11 style): log in (the Login link at the bottom of the sidebar) as an operator or administrator. Every write opens one dialog: meaning (locked to ACKNOWLEDGED for alarm acks), a reason of at least three characters, and the account password. The request carries `signature` and `reason`; the audit row then reads `old -> new | signed: <MEANING> | reason: <text>`, and the Audit log page (administrator tier) shows old, new, meaning and reason, with CSV export. Without a signature the gateway answers 403 `signature required`; with a different user name than the logged-in user, 403 `signature actor mismatch`. Viewers see the controls disabled. The alarm journal page needs the journal name (Gateway environment variable `IGNITE_ALARM_JOURNAL` on the site record, or typed into the page).
+
+Trial: the same two-hour trial applies. The page header shows "Trial - N m left" and, once expired, "Trial expired - history/alarms paused"; reset it on the gateway home page before showing trends, alarms or the kiosk header notice. After the demo run `cr.restore()` (Restore normal), set any changed setpoints back (`DPSetpointPa` at design), acknowledge remaining alarms (signed) and log out.
+
 ## Site keys
 
 Each site has its own read-tier API key set on the site record (Home > Ignite > Launch, or `PUT /sites/{id}` as an administrator); the gateway injects it into the served page, so there is nothing to type. To rotate the microgrid key, generate a random value, `PUT /sites/5 {"apiKey": "<key>"}` and `POST /sites/5/sync`; the key opens only `[default]MG/**`. The brewery works the same with site 6 (`[default]BR/**`). Open pages hold the old key until reloaded, and a rotation during a long run ends the live stream at its next reconnect. Keep rotated keys out of tracked files.
